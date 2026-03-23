@@ -14,7 +14,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
     /** --- 2.1 ADMIN OVERRIDE --- **/
     // We allow the master admin to bypass the Sunday restriction for maintenance
-    if ($email === 'neulib@login.2526' && $password === '2526123NEUlib') {
+    if ($email === 'neulib@login.2526' && $password === '25260323') {
         session_unset(); 
         session_regenerate_id(true);
 
