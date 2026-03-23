@@ -109,103 +109,58 @@ require_once 'db_conn.php';
                 </thead>
                 <tbody>
 <?php
-/**
- * VISITOR LOGS QUERIES
- *
- * Confirmed columns from debug:
- *   active_sessions : id, user_type, id_number, contact, first_name, middle_name,
- *                     last_name, email, suffix, course, reason, others_detail,
- *                     time_in, date_visited
- *                     NOTE: NO time_out column — use NULL AS time_out
- *
- *   library_logs    : id, user_type, id_number, contact, first_name, middle_name,
- *                     last_name, email, suffix, course, time_in, time_out, reason,
- *                     others_detail, date_visited, status
- *
- *   users           : id, first_name, last_name, email, status, profile_pic,
- *                     password, reset_token, token_expiry, verification_code,
- *                     is_verified, created_at, is_blocked, role
- *                     NOTE: NO middle_name column in users table
- */
-
 $rows_all = [];
 
-// --- Query 1: Currently inside (active_sessions) ---
-$sql_active = "
-    SELECT
-        a.id,
-        a.reason,
-        a.others_detail,
-        a.time_in,
-        NULL        AS time_out,
-        'Inside'    AS current_status,
-        a.date_visited,
-        a.id_number,
-        a.first_name,
-        a.middle_name,
-        a.last_name,
-        a.suffix,
-        a.user_type,
-        a.course,
-        a.email,
-        a.contact,
-        u.is_blocked,
-        u.role
-    FROM active_sessions a
-    LEFT JOIN users u ON a.email = u.email
-    WHERE (u.role IS NULL OR u.role != 'ADMIN')
-    ORDER BY a.date_visited DESC, a.time_in DESC
-";
+// --- STEP 1: Kuhanin ang lahat ng logs (Active at Logs) ---
+$sql_active = "SELECT a.*, u.is_blocked, u.role FROM active_sessions a LEFT JOIN users u ON a.email = u.email WHERE (u.role IS NULL OR u.role != 'ADMIN')";
+$sql_logs   = "SELECT l.*, u.is_blocked, u.role FROM library_logs l LEFT JOIN users u ON l.email = u.email WHERE (u.role IS NULL OR u.role != 'ADMIN')";
 
-// --- Query 2: Logged out (library_logs) ---
-$sql_logs = "
-    SELECT
-        l.id,
-        l.reason,
-        l.others_detail,
-        l.time_in,
-        l.time_out,
-        'Out'       AS current_status,
-        l.date_visited,
-        l.id_number,
-        l.first_name,
-        l.middle_name,
-        l.last_name,
-        l.suffix,
-        l.user_type,
-        l.course,
-        l.email,
-        l.contact,
-        u.is_blocked,
-        u.role
-    FROM library_logs l
-    LEFT JOIN users u ON l.email = u.email
-    WHERE (u.role IS NULL OR u.role != 'ADMIN')
-    ORDER BY l.date_visited DESC, l.time_in DESC
-";
+$res_active = $conn->query($sql_active);
+$res_logs   = $conn->query($sql_logs);
 
-$r1 = $conn->query($sql_active);
-if ($r1) {
-    while ($row = $r1->fetch_assoc()) $rows_all[] = $row;
-} else {
-    error_log("active_sessions query error: " . $conn->error);
+$temp_all = [];
+if ($res_active) while ($row = $res_active->fetch_assoc()) { $row['current_status'] = 'Inside'; $row['time_out'] = null; $temp_all[] = $row; }
+if ($res_logs)   while ($row = $res_logs->fetch_assoc())   { $row['current_status'] = 'Out'; $temp_all[] = $row; }
+
+// --- STEP 2: PROFILE SYNCING (PHP SIDE) ---
+$latest_profile = [];
+foreach ($temp_all as $r) {
+    $id_num = $r['id_number'];
+    $current_dt = $r['date_visited'] . ' ' . $r['time_in'];
+    
+    if (!isset($latest_profile[$id_num]) || $current_dt > $latest_profile[$id_num]['dt']) {
+        $latest_profile[$id_num] = [
+            'dt' => $current_dt,
+            'fname' => $r['first_name'],
+            'mname' => $r['middle_name'],
+            'lname' => $r['last_name'],
+            'suffix' => $r['suffix'],
+            'course' => $r['course'],
+            'utype' => $r['user_type'],
+            'contact' => $r['contact']
+        ];
+    }
 }
 
-$r2 = $conn->query($sql_logs);
-if ($r2) {
-    while ($row = $r2->fetch_assoc()) $rows_all[] = $row;
-} else {
-    error_log("library_logs query error: " . $conn->error);
+// --- STEP 3: APPLY SYNC & MERGE ---
+foreach ($temp_all as $r) {
+    $id_num = $r['id_number'];
+    // Dito natin "isysync" ang record sa latest profile na nahanap natin
+    $r['first_name']  = $latest_profile[$id_num]['fname'];
+    $r['middle_name'] = $latest_profile[$id_num]['mname'];
+    $r['last_name']   = $latest_profile[$id_num]['lname'];
+    $r['suffix']      = $latest_profile[$id_num]['suffix'];
+    $r['course']      = $latest_profile[$id_num]['course'];
+    $r['user_type']   = $latest_profile[$id_num]['utype'];
+    $r['contact']     = $latest_profile[$id_num]['contact'];
+    
+    $rows_all[] = $r;
 }
 
-// Sort merged results: newest first
+// --- STEP 4: SORTING ---
 usort($rows_all, function($a, $b) {
-    return strcmp(
-        $b['date_visited'] . ' ' . $b['time_in'],
-        $a['date_visited'] . ' ' . $a['time_in']
-    );
+    return strcmp($b['date_visited'] . ' ' . $b['time_in'], $a['date_visited'] . ' ' . $a['time_in']);
 });
-
 /** --- RENDER ROWS --- **/
 if (!empty($rows_all)):
     foreach ($rows_all as $row):
