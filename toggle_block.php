@@ -29,7 +29,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* STEP B: AUTO-OUT LOGIC (IF ACTION IS BLOCK) */
         if ($status === 1) {
-            // 1. Hanapin kung ang user ay kasalukuyang 'Inside' (active_sessions)
             $check_active = $conn->prepare("SELECT * FROM active_sessions WHERE email = ?");
             $check_active->bind_param("s", $email);
             $check_active->execute();
@@ -38,7 +37,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result->num_rows > 0) {
                 $session_data = $result->fetch_assoc();
                 
-                // 2. I-insert sa library_logs na may 'Blocked' status at current timestamp as time_out
                 $insert_log = $conn->prepare("INSERT INTO library_logs 
                     (id_number, first_name, middle_name, last_name, suffix, user_type, course, email, reason, others_detail, time_in, time_out, date_visited, status) 
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'Blocked')");
@@ -51,7 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $insert_log->execute();
 
-                // 3. Tanggalin na sa active_sessions
                 $delete_active = $conn->prepare("DELETE FROM active_sessions WHERE email = ?");
                 $delete_active->bind_param("s", $email);
                 $delete_active->execute();
