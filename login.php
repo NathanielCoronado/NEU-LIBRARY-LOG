@@ -92,10 +92,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
         body, html { width: 100%; height: 100%; overflow: hidden; background-color: #fff; font-family: 'Segoe UI', sans-serif; }
 
         /** --- BACKGROUND & LAYOUT --- **/
-        .header-container { position: relative; width: 100%; height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; }
-        .header-container::before, .header-container::after { content: ""; position: absolute; left: 0; width: 100%; height: 36px; z-index: 100; animation: slideInOnce 1.2s ease-out forwards; }
-        .header-container::before { top: 0; background: linear-gradient(to bottom, #1e7d32 33.33%, #ffffff 33.33% 66.66%, #c62828 66.66%); transform: translateX(-100%); }
-        .header-container::after { bottom: 0; background: linear-gradient(to bottom, #c62828 33.33%, #ffffff 33.33% 66.66%, #1e7d32 66.66%); transform: translateX(100%); }
+        /* 2. MAIN CONTAINER & ANIMATION */
+        .header-container { 
+            position: relative; 
+            width: 100%; 
+            height: 100vh; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            overflow: hidden; 
+        }
+
+        .header-container::before,
+        .header-container::after { 
+            content: ""; 
+            position: absolute; 
+            left: 0; 
+            width: 100%; 
+            height: 36px; 
+            z-index: 100; 
+            animation: slideInOnce 1.2s ease-out forwards; 
+        }
+
+        .header-container::before { 
+            top: 0; 
+            background: linear-gradient(to bottom,
+                #1e7d32 33.33%,
+                #ffffff 33.33% 66.66%,
+                #c62828 66.66%); 
+            transform: translateX(-100%); 
+        }
+
+        .header-container::after { 
+            bottom: 0; 
+            background: linear-gradient(to bottom,
+                #c62828 33.33%,
+                #ffffff 33.33% 66.66%,
+                #1e7d32 66.66%); 
+            transform: translateX(100%); 
+        }
+
+        @keyframes slideInOnce { 
+            to { transform: translateX(0); } 
+        }
         
         .background-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=trueA'); background-size: cover; background-position: center; filter: blur(6px); transform: scale(1.1); }
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; background: rgba(255, 255, 255, 0.1); }
@@ -353,15 +392,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
                 });
             } else {
                 Swal.fire({ 
-                    title: 'Account Not Found', 
-                    text: 'No account is linked to this Google profile. Please register first.', 
-                    icon: 'info',
-                    showCancelButton: true,
-                    confirmButtonText: 'SIGN UP NOW',
-                    cancelButtonText: 'TRY AGAIN',
-                    confirmButtonColor: '#1e7d32',
-                    customClass: { popup: 'neu-curved-popup', confirmButton: 'neu-curved-btn' }
-                }).then((result) => { if (result.isConfirmed) { window.location.href = 'signup.php'; } });
+    title: 'Account Not Found', 
+    // Gamit ang backticks (`) para hindi mag-error ang single quotes sa "don't" at "Sign Up"
+    text: `It looks like you don't have an account yet! Click "Sign Up" to create one using your Google profile or register manually to get started.`, 
+    icon: 'info',
+    showCancelButton: true,
+    confirmButtonText: 'SIGN UP NOW',
+    cancelButtonText: 'TRY AGAIN',
+    confirmButtonColor: '#1e7d32', 
+    customClass: { 
+        popup: 'neu-curved-popup', 
+        confirmButton: 'neu-curved-btn' 
+    }
+}).then((result) => { 
+    if (result.isConfirmed) { 
+        window.location.href = 'signup.php'; 
+    } 
+});
             }
         } catch (err) { 
             Swal.fire({ 
