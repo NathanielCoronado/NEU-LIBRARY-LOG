@@ -42,7 +42,7 @@ The admin dashboard utilizes **Chart.js** to provide visual insights:
 For testing and evaluation purposes, use the following credentials to access the Administrative Dashboard:
 
 > **Username:** `neulib@login.2526`  
-> **Password:** `********`
+> **Password:** `25260323`
 
 ---
 
