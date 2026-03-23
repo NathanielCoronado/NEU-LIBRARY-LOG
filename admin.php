@@ -1,7 +1,7 @@
 <?php
 /** --- 1. INITIALIZATION --- **/
 error_reporting(E_ALL);
-int_set('display_errors', 1);
+ini_set('display_errors', 1);
 session_start();
 require_once 'db_conn.php';
 ?>
@@ -1328,6 +1328,13 @@ function exportTableToCSV() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+function searchFlaggedTable() {
+    const term = document.getElementById("flagSearch").value.toUpperCase();
+    document.querySelectorAll("#flagTable tbody tr").forEach(row =>{
+        row.style.display = row.innerText.toUpperCase().includes(term) ? "" : "none";
+    });
 }
 </script>
 </body>
