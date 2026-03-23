@@ -82,7 +82,7 @@ if (isset($_POST['signup'])) {
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
         $mail->Username   = 'nathaniel.coronado@neu.edu.ph';
-        $mail->Password   = 'fqvl bscb aibo bait'; 
+        $mail->Password   = 'jonc tuaj dpwy unpw'; 
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
 
@@ -594,7 +594,7 @@ if (isset($_POST['signup'])) {
             </div>
 
             <div class="login-link">
-                Already have an account? <a href="LOGIN.PHP">Log in</a>
+                Already have an account? <a href="login.php">Log in</a>
             </div>
         </div>
     </div>
@@ -633,7 +633,7 @@ if (isset($_POST['signup'])) {
 
     /* 2. NAVIGATION & LOAD HANDLERS */
     if (performance.navigation.type === performance.navigation.TYPE_RELOAD) {
-        window.location.href = "INTRO2.PHP";
+        window.location.href = "intro2.php";
     }
 
     window.onload = function() {
