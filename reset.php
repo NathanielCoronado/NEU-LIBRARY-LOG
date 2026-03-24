@@ -156,7 +156,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
             </div>
             <h2>Link Expired</h2>
             <p class="subtitle">The password reset link is invalid or has already expired. Please request a new one.</p>
-            <a href="FORGOT.PHP" class="btn-update" style="text-decoration: none; display: block;">Back to Forgot Password</a>
+            <a href="forgot.php" class="btn-update" style="text-decoration: none; display: block;">Back to Forgot Password</a>
         <?php endif; ?>
     </div>
 </div>
