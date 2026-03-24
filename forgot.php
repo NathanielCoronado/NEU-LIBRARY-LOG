@@ -47,7 +47,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
                 $mail->Username   = 'nathaniel.coronado@neu.edu.ph'; 
-                $mail->Password   = 'fqvl bscb aibo bait'; 
+                $mail->Password   = 'qfbe nosw udgp zofg'; 
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
 
@@ -58,7 +58,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
                 // Email Content
                 $mail->isHTML(true);
                 $mail->Subject = 'Security Notice: Password Reset Request';
-                $reset_link = "http://localhost/reset.php?token=$token&email=" . urlencode($email);
+                $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
+				$host = $_SERVER['HTTP_HOST'];
+				$currentDir = str_replace('\\', '/', dirname($_SERVER['REQUEST_URI']));
+				$reset_link = $protocol . "://" . $host . rtrim($currentDir, '/') . "/reset.php?token=$token&email=" . urlencode($email);
 
                 $mail->Body = "
                 <div style='background-color: #f4f7f6; padding: 40px 10px; font-family: \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
