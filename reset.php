@@ -32,7 +32,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
     $updateQuery = "UPDATE users SET password = '$new_password', reset_token = NULL, token_expiry = NULL WHERE email = '$email'";
 
     if (mysqli_query($conn, $updateQuery)) {
-        echo "<script>alert('Password successfully updated!'); window.location='LOGIN.PHP';</script>";
+        echo "<script>alert('Password successfully updated!'); window.location='login.php';</script>";
         exit();
     } else {
         echo "<script>alert('Error updating password. Please try again.');</script>";
