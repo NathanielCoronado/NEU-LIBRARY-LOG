@@ -65,7 +65,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $mail->isHTML(true);
                 $mail->Subject = 'Security Notice: Password Reset Request';
                 
-                $reset_link = "http://localhost/reset.php?token=$token&email=" . urlencode($email);
+                $reset_link = "https://neulibproject.page.gd/reset.php?token=$token&email=" . urlencode($email);
 
                 $mail->Body = "
                 <div style='background-color: #f4f7f6; padding: 40px 10px; font-family: \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
