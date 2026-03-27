@@ -5,6 +5,14 @@
 
 ---
 
+## 🔑 Admin Credentials
+For testing and evaluation purposes, use the following credentials to access the Administrative Dashboard:
+
+> **Username:** `neulib@login.2526`  
+> **Password:** `25260323`
+
+---
+
 ## 📖 Overview
 The **Library Log System** is a robust application designed to manage library foot traffic at New Era University. It features secure authentication, real-time session monitoring, and comprehensive administrative oversight to ensure policy compliance and data integrity.
 
@@ -35,14 +43,6 @@ The admin dashboard utilizes **Chart.js** to provide visual insights:
 * **Total Users:** Quick-reference summary cards.
 * **Traffic Trends:** Line charts showing daily, weekly, and monthly user volume.
 * **Usage Purpose:** Doughnut charts visualizing why users visit (e.g., Research, Study, Borrowing).
-
----
-
-## 🔑 Admin Credentials
-For testing and evaluation purposes, use the following credentials to access the Administrative Dashboard:
-
-> **Username:** `neulib@login.2526`  
-> **Password:** `25260323`
 
 ---
 
