@@ -3,6 +3,7 @@
 header('Content-Type: application/json');
 require_once 'auth.php';
 require_admin_api();
+require_once 'profile.php';
 date_default_timezone_set('Asia/Manila');
 
 /** --- 2. REQUEST HANDLING --- **/
@@ -17,10 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $l_name        = strtoupper(trim($_POST['last_name'] ?? ''));
     $suffix        = strtoupper(trim($_POST['suffix'] ?? ''));
     $contact       = trim($_POST['contact'] ?? '');
-    $u_type        = strtoupper(trim($_POST['user_type'] ?? 'VISITOR'));
+    $u_type        = normalize_profile(['user_type' => $_POST['user_type'] ?? 'Guest'])['user_type'];
     
-    $course        = !empty(trim($_POST['course'] ?? '')) ? strtoupper(trim($_POST['course'])) : 'N/A';
-    $reason        = !empty(trim($_POST['reason'] ?? '')) ? trim($_POST['reason']) : '';
+    $course        = normalize_profile(['course' => $_POST['course'] ?? ''])['course'] ?: 'Not Applicable';
+    $reason        = canonical($_POST['reason'] ?? '', array_keys($REASONS));
     $others_detail = trim($_POST['others_detail'] ?? ''); 
     $date_visited  = date('Y-m-d');
 

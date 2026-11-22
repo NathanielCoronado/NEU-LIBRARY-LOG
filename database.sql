@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS users (
     id                INT AUTO_INCREMENT PRIMARY KEY,
     first_name        VARCHAR(100) NOT NULL,
     last_name         VARCHAR(100) NOT NULL DEFAULT '',
+    middle_name       VARCHAR(100) NULL,              -- saved visitor profile ↓
+    suffix            VARCHAR(20)  NULL,              --   (pre-fills the form,
+    id_number         VARCHAR(50)  NULL,              --    editable by admins)
+    contact           VARCHAR(30)  NULL,
+    user_type         VARCHAR(50)  NULL,
+    course            VARCHAR(150) NULL,
     email             VARCHAR(191) NOT NULL UNIQUE,
     password          VARCHAR(255) NULL,              -- NULL for Google-only accounts
     profile_pic       TEXT NULL,

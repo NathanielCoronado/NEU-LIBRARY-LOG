@@ -63,7 +63,7 @@ The system was developed as a midterm project for **Information Management 2** a
 | Feature | Description |
 |---|---|
 | **Account registration** | Email sign-up with an activation link, or one-tap **Google Sign-In** |
-| **Time-in form** | Captures user type, ID number, program, and purpose of visit; returning visitors' IDs are remembered |
+| **Saved profile** | The time-in form is pre-filled with the visitor's last details (or the details an admin corrected), so returning visitors just tap **Submit** |
 | **Active session screen** | Live clock and a single **Out** button to record time-out |
 | **Real-time notices** | Visitors are informed immediately if their session is ended, their account is blocked, or they are flagged |
 | **Password recovery** | Time-limited reset link delivered by email |
@@ -76,7 +76,7 @@ The system was developed as a midterm project for **Information Management 2** a
 | **Visit logs** | Filter by period, search by name or ID, and add, edit, time-out, or delete records, including walk-in guests |
 | **Analytics** | Weekly visitor trend and purpose-of-visit distribution charts |
 | **Excel export** | Download the current view as an `.xls` file |
-| **User management** | Send password resets, block or unblock accounts, grant or revoke admin access, delete accounts |
+| **User management** | Edit a user's details (synced to all of their records), send password resets, block or unblock accounts, grant or revoke admin access, delete accounts |
 | **Flagging** | Record policy violations with a reason; edit or clear flags at any time |
 | **Responsive layout** | Slide-out navigation, horizontally scrollable tables, and full-width forms on phones and tablets |
 
@@ -172,7 +172,7 @@ All environment-specific settings are in **`config.php`**, which is excluded fro
 
 | Table | Purpose |
 |---|---|
-| `users` | Registered accounts: profile, password hash, role (`USER`/`ADMIN`), verification and block status, reset tokens |
+| `users` | Registered accounts: saved visitor profile (ID, contact, program…), password hash, role (`USER`/`ADMIN`), verification and block status, reset tokens |
 | `active_sessions` | Visitors currently inside the library |
 | `library_logs` | Completed visits with time-in and time-out |
 | `visitor_masterlist` | One profile per ID number, used when admins add walk-in visitors |
@@ -209,16 +209,20 @@ NEU-LIBRARY-LOG/
 ├── update_role.php           # │
 ├── flag_process.php          # │
 ├── check_id_conflict.php     # │
-├── generate_reset_link.php   # ┘
+├── generate_reset_link.php   # │
+├── update_user.php           # ┘
 │
 ├── db_conn.php               # Configuration loader + database connection
 ├── auth.php                  # Session handling and admin access control
 ├── mailer.php                # PHPMailer setup and email templates
+├── profile.php               # Saved visitor profile + sync across records
+├── options.php               # Shared lists: user types, programs, reasons
 ├── config.example.php        # Configuration template
 ├── database.sql              # Database schema
 │
 ├── admin.css                 # Dashboard styles
 ├── responsive.css            # Shared mobile styles for public pages
+├── tricolor.css              # NEU green-white-red border used on every page
 ├── neu-logo.jpg · neu-library.jpg · favicon.ico
 ├── PHPMailer/                # Bundled PHPMailer library (LGPL-2.1)
 └── docs/screenshots/         # README images

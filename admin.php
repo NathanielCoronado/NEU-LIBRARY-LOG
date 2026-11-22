@@ -2,6 +2,8 @@
 /** --- 1. INITIALIZATION & ACCESS CONTROL --- **/
 require_once 'auth.php';
 require_admin();   // only admins can open the dashboard
+require_once 'profile.php';
+ensure_profile_schema();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -299,103 +301,86 @@ if (!empty($rows_all)):
                 <tbody>
 <?php
 /**
- * USER MANAGEMENT QUERY
- *
- * users table columns confirmed:
- *   id, first_name, last_name, email, status, profile_pic, password,
- *   reset_token, token_expiry, verification_code, is_verified,
- *   created_at, is_blocked, role
- *
- * NOTE: users DOES have first_name and last_name but NO middle_name.
- * We prefer names from activity logs (more up-to-date), falling back
- * to users table values.
+ * USER MANAGEMENT
+ * Details come from the user's saved profile (users table). For older
+ * accounts with an empty profile, the latest visit is used instead.
  */
 $sqlUser = "
-    SELECT
-        u.email,
-        u.is_blocked,
-        u.role,
-        COALESCE(logs.first_name,  u.first_name,  '')                AS final_fname,
-        COALESCE(logs.middle_name, '')                               AS final_mname,
-        COALESCE(logs.last_name,   u.last_name,   '')                AS final_lname,
-        COALESCE(logs.id_number,   'PENDING/NO LOGS')                AS final_id,
-        COALESCE(logs.contact,     'N/A')                            AS final_contact,
-        logs.last_seen
+    SELECT u.*, logs.last_seen,
+           logs.l_mname, logs.l_suffix, logs.l_id, logs.l_contact, logs.l_type, logs.l_course
     FROM users u
     LEFT JOIN (
-        SELECT
-            email,
-            first_name,
-            middle_name,
-            last_name,
-            id_number,
-            contact,
-            MAX(date_visited) AS last_seen
+        SELECT c.email, MAX(c.date_visited) AS last_seen,
+               SUBSTRING_INDEX(GROUP_CONCAT(c.middle_name ORDER BY c.date_visited DESC, c.id DESC SEPARATOR '\x1F'), '\x1F', 1) AS l_mname,
+               SUBSTRING_INDEX(GROUP_CONCAT(c.suffix      ORDER BY c.date_visited DESC, c.id DESC SEPARATOR '\x1F'), '\x1F', 1) AS l_suffix,
+               SUBSTRING_INDEX(GROUP_CONCAT(c.id_number   ORDER BY c.date_visited DESC, c.id DESC SEPARATOR '\x1F'), '\x1F', 1) AS l_id,
+               SUBSTRING_INDEX(GROUP_CONCAT(c.contact     ORDER BY c.date_visited DESC, c.id DESC SEPARATOR '\x1F'), '\x1F', 1) AS l_contact,
+               SUBSTRING_INDEX(GROUP_CONCAT(c.user_type   ORDER BY c.date_visited DESC, c.id DESC SEPARATOR '\x1F'), '\x1F', 1) AS l_type,
+               SUBSTRING_INDEX(GROUP_CONCAT(c.course      ORDER BY c.date_visited DESC, c.id DESC SEPARATOR '\x1F'), '\x1F', 1) AS l_course
         FROM (
-            SELECT email, first_name, middle_name, last_name, id_number, contact, date_visited
-            FROM active_sessions
+            SELECT id, email, middle_name, suffix, id_number, contact, user_type, course, date_visited FROM active_sessions WHERE email IS NOT NULL
             UNION ALL
-            SELECT email, first_name, middle_name, last_name, id_number, contact, date_visited
-            FROM library_logs
-        ) AS combined
-        GROUP BY email
+            SELECT id, email, middle_name, suffix, id_number, contact, user_type, course, date_visited FROM library_logs WHERE email IS NOT NULL
+        ) AS c
+        GROUP BY c.email
     ) AS logs ON u.email = logs.email
     WHERE u.email IS NOT NULL AND u.email != ''
-    ORDER BY logs.last_seen DESC, u.last_name ASC
+    ORDER BY logs.last_seen IS NULL, logs.last_seen DESC, u.last_name ASC
 ";
 
 $resUser = $conn->query($sqlUser);
 
 if ($resUser && $resUser->num_rows > 0):
     while ($urow = $resUser->fetch_assoc()):
-        $isBlocked   = (isset($urow['is_blocked']) && $urow['is_blocked'] == 1);
+        $pick = function ($own, $fromLogs) { return ($own ?? '') !== '' ? $own : ($fromLogs ?? ''); };
+        $up = normalize_profile([
+            'first_name'  => $urow['first_name'],
+            'middle_name' => $pick($urow['middle_name'] ?? '', $urow['l_mname']),
+            'last_name'   => $urow['last_name'],
+            'suffix'      => $pick($urow['suffix'] ?? '', $urow['l_suffix']),
+            'id_number'   => $pick($urow['id_number'] ?? '', $urow['l_id']),
+            'contact'     => $pick($urow['contact'] ?? '', $urow['l_contact']),
+            'user_type'   => $pick($urow['user_type'] ?? '', $urow['l_type']),
+            'course'      => $pick($urow['course'] ?? '', $urow['l_course']),
+        ]);
+        $isBlocked   = (int) ($urow['is_blocked'] ?? 0) === 1;
         $rawEmail    = $urow['email'];
         $noLogs      = is_null($urow['last_seen']);
         $currentRole = strtoupper($urow['role'] ?? '');
-
-        // Fallback: if still no name, use email prefix
-        $fname = !empty($urow['final_fname']) ? strtoupper($urow['final_fname']) : strtoupper(explode('@', $rawEmail)[0]);
-        $mname = strtoupper($urow['final_mname'] ?: '-');
-        $lname = strtoupper($urow['final_lname'] ?: '-');
+        $fname = $up['first_name'] !== '' ? $up['first_name'] : strtoupper(explode('@', $rawEmail)[0]);
 ?>
-                <tr data-email="<?php echo htmlspecialchars($rawEmail); ?>"
+                <tr data-email="<?php echo e($rawEmail); ?>"
+                    data-fname="<?php echo e($up['first_name']); ?>" data-mname="<?php echo e($up['middle_name']); ?>"
+                    data-lname="<?php echo e($up['last_name']); ?>" data-suffix="<?php echo e($up['suffix']); ?>"
+                    data-idnum="<?php echo e($up['id_number']); ?>" data-contact="<?php echo e($up['contact']); ?>"
+                    data-category="<?php echo e($up['user_type']); ?>" data-program="<?php echo e($up['course']); ?>"
                     style="<?php echo $isBlocked ? 'background-color:#fff5f5;' : ($noLogs ? 'background-color:#fffdf0;' : ''); ?>">
 
-                    <td><?php echo htmlspecialchars($fname); ?></td>
-                    <td><?php echo htmlspecialchars($mname); ?></td>
-                    <td><?php echo htmlspecialchars($lname); ?></td>
-                    <td class="id-cell" style="font-weight:bold;color:#2c3e50;">
-                        <?php echo htmlspecialchars($urow['final_id']); ?>
-                    </td>
-                    <td><?php echo htmlspecialchars($urow['final_contact']); ?></td>
+                    <td><?php echo e($fname); ?></td>
+                    <td><?php echo e($up['middle_name'] ?: '-'); ?></td>
+                    <td><?php echo e(trim($up['last_name'] . ' ' . $up['suffix']) ?: '-'); ?></td>
+                    <td class="id-cell" style="font-weight:bold;color:#2c3e50;"><?php echo e($up['id_number'] ?: 'NOT SET'); ?></td>
+                    <td><?php echo e($up['contact'] ?: 'N/A'); ?></td>
                     <td style="text-transform:lowercase;">
-                        <strong><?php echo htmlspecialchars($rawEmail); ?></strong>
+                        <strong><?php echo e($rawEmail); ?></strong>
                         <?php if ($noLogs): ?>
                             <br><small style="color:#e67e22;font-style:italic;font-weight:bold;">(Registered - No Logs Found)</small>
                         <?php endif; ?>
                     </td>
                     <td>
                         <div class="action-buttons" style="display:flex;gap:5px;">
-                            <button class="btn-action btn-reset"
-                                onclick="resetPassword(this, '<?php echo htmlspecialchars($rawEmail, ENT_QUOTES); ?>')">
-                                Reset
-                            </button>
+                            <button class="btn-action btn-edit" onclick="editUser(this)">📝 Edit</button>
+                            <button class="btn-action btn-reset" onclick="resetPassword(this, '<?php echo e($rawEmail); ?>')">Reset</button>
                             <button class="btn-action btn-block" onclick="toggleBlock(this)"
                                 <?php echo $isBlocked ? 'style="background:#2ecc71;border-color:#2ecc71;color:white;"' : ''; ?>>
                                 <?php echo $isBlocked ? 'Unblock' : 'Block'; ?>
                             </button>
                             <?php if ($currentRole === 'ADMIN'): ?>
-                                <button class="btn-action"
-                                    onclick="changeRole('<?php echo htmlspecialchars($rawEmail, ENT_QUOTES); ?>', 'USER')"
-                                    style="background:#34495e;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:bold;">
-                                    REVOKE ADMIN
-                                </button>
+                                <button class="btn-action" onclick="changeRole('<?php echo e($rawEmail); ?>', 'USER')"
+                                    style="background:#34495e;color:white;">REVOKE ADMIN</button>
                             <?php else: ?>
-                                <button class="btn-action"
-                                    onclick="changeRole('<?php echo htmlspecialchars($rawEmail, ENT_QUOTES); ?>', 'ADMIN')"
-                                    style="background:#9b59b6;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:bold;">
-                                    MAKE ADMIN
-                                </button>
+                                <button class="btn-action" onclick="changeRole('<?php echo e($rawEmail); ?>', 'ADMIN')"
+                                    style="background:#9b59b6;color:white;">MAKE ADMIN</button>
                             <?php endif; ?>
                             <button class="btn-action btn-delete" onclick="deleteUser(this)">Delete</button>
                         </div>
@@ -513,31 +498,22 @@ if ($resultFlags && $resultFlags->num_rows > 0):
                 <label>Category <span style="color:red;">*</span></label>
                 <select id="mCategory">
                     <option value="" disabled selected>SELECT</option>
-                    <option>GUEST</option>
-                    <option>STUDENT</option>
-                    <option>FACULTY</option>
-                    <option>EMPLOYEE</option>
+                    <?php render_options($USER_TYPES); ?>
                 </select>
             </div>
-            <div class="form-group" style="flex:1;">
+            <div class="form-group" style="flex:2;">
                 <label>Program</label>
-                <input type="text" id="mProgram" placeholder="E.G. BSIT">
+                <select id="mProgram">
+                    <option value="" disabled selected>SELECT PROGRAM</option>
+                    <?php render_programs(); ?>
+                </select>
             </div>
         </div>
         <div class="form-group">
             <label>Purpose <span style="color:red;">*</span></label>
             <select id="mPurpose" onchange="toggleOthersInput(this)">
                 <option value="" disabled selected>SELECT PURPOSE</option>
-                <option value="STUDY">STUDY</option>
-                <option value="BORROWING">BORROWING</option>
-                <option value="RETURNING">RETURNING</option>
-                <option value="INTERNET USE">INTERNET USE</option>
-                <option value="MEETING">MEETING</option>
-                <option value="RESEARCH">RESEARCH</option>
-                <option value="GROUP STUDY">GROUP STUDY</option>
-                <option value="PRINTING/PHOTOCOPY">PRINTING / PHOTOCOPY</option>
-                <option value="ACADEMIC REQUIREMENT">ACADEMIC REQUIREMENT</option>
-                <option value="OTHERS">OTHERS (PLEASE SPECIFY)</option>
+                <?php render_options($REASONS, '', true); ?>
             </select>
         </div>
         <div class="form-group" id="otherPurposeContainer" style="display:none;margin-top:10px;">
@@ -547,6 +523,41 @@ if ($resultFlags && $resultFlags->num_rows > 0):
         <div class="modal-actions">
             <button class="btn-cancel" onclick="closeModal()">Cancel</button>
             <button class="btn-save" id="saveBtn" onclick="saveVisitor()">Save Visitor</button>
+        </div>
+    </div>
+</div>
+
+<!-- ===== EDIT REGISTERED USER MODAL ===== -->
+<div class="modal" id="userModal">
+    <div class="modal-content" style="max-width:480px;max-height:90vh;overflow-y:auto;padding:20px;">
+        <h2 style="margin-top:0;">📝 Edit User Details</h2>
+        <p style="font-size:0.75rem;color:#777;margin:-10px 0 15px;text-transform:uppercase;">
+            Saved to the account and all of its visit records. The visitor's form will show these details next time.
+        </p>
+        <input type="hidden" id="uEmail">
+        <div style="display:flex;gap:10px;">
+            <div class="form-group" style="flex:1;"><label>First Name <span style="color:red;">*</span></label><input type="text" id="uFirst"></div>
+            <div class="form-group" style="flex:1;"><label>Middle Name</label><input type="text" id="uMiddle"></div>
+        </div>
+        <div style="display:flex;gap:10px;">
+            <div class="form-group" style="flex:2;"><label>Last Name <span style="color:red;">*</span></label><input type="text" id="uLast"></div>
+            <div class="form-group" style="flex:1;"><label>Suffix</label><input type="text" id="uSuffix"></div>
+        </div>
+        <div style="display:flex;gap:10px;">
+            <div class="form-group" style="flex:1;"><label>ID Number</label><input type="text" id="uID" placeholder="XX-XXXXX-XXX"></div>
+            <div class="form-group" style="flex:1;"><label>Contact Number</label><input type="text" id="uContact" placeholder="09XXXXXXXXX"></div>
+        </div>
+        <div class="form-group">
+            <label>Category</label>
+            <select id="uCategory"><option value="">NOT SET</option><?php render_options($USER_TYPES); ?></select>
+        </div>
+        <div class="form-group">
+            <label>Program</label>
+            <select id="uProgram"><option value="">NOT SET</option><?php render_programs(); ?></select>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-cancel" onclick="closeUserModal()">Cancel</button>
+            <button class="btn-save" id="uSaveBtn" onclick="saveUser()">Save Changes</button>
         </div>
     </div>
 </div>
@@ -634,15 +645,15 @@ function closeModal() {
     editMode = false; editingRow = null; oldIDForUpdate = '';
     document.getElementById('modalTitle').innerText = '➕ ADD NEW VISITOR';
     document.getElementById('saveBtn').innerText    = 'SAVE VISITOR';
-    ['mFirstName','mMiddleName','mLastName','mSuffix','mID','mOtherPurpose','mProgram','mContact','mSessionId']
+    ['mFirstName','mMiddleName','mLastName','mSuffix','mID','mOtherPurpose','mContact','mSessionId']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    ['mCategory','mPurpose'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+    ['mCategory','mPurpose','mProgram'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
     const oc = document.getElementById('otherPurposeContainer');
     if (oc) oc.style.display = 'none';
 }
 
 function toggleOthersInput(sel) {
-    document.getElementById('otherPurposeContainer').style.display = sel.value === 'OTHERS' ? 'block' : 'none';
+    document.getElementById('otherPurposeContainer').style.display = sel.value.toUpperCase() === 'OTHERS' ? 'block' : 'none';
 }
 
 /** ============================================================
@@ -803,7 +814,7 @@ function filterByTime(range, btn) {
 async function saveVisitor() {
     const fName  = document.getElementById('mFirstName').value.trim().toUpperCase();
     const lName  = document.getElementById('mLastName').value.trim().toUpperCase();
-    const cat    = document.getElementById('mCategory').value.toUpperCase();
+    const cat    = document.getElementById('mCategory').value;
     const purp   = document.getElementById('mPurpose').value;
     const idNum  = document.getElementById('mID').value.trim().toUpperCase() || 'N/A';
 
@@ -833,7 +844,7 @@ async function saveVisitor() {
     fd.append('id_number',     idNum);
     fd.append('contact',       document.getElementById('mContact').value.trim());
     fd.append('user_type',     cat);
-    fd.append('course',        document.getElementById('mProgram').value.trim().toUpperCase() || 'N/A');
+    fd.append('course',        document.getElementById('mProgram').value || 'Not Applicable');
     fd.append('reason',        purp);
     fd.append('others_detail', document.getElementById('mOtherPurpose').value.trim().toUpperCase());
 
@@ -860,6 +871,17 @@ async function saveVisitor() {
         .catch(e => { console.error(e); alert('⚠️ CONNECTION ERROR.'); });
 }
 
+/** Select an <option> ignoring upper/lower case (old records were saved in CAPS) */
+function setSelect(id, value) {
+    const el = document.getElementById(id);
+    let v = (value || '').trim().toUpperCase();
+    if (v === 'N/A') v = 'NOT APPLICABLE';
+    const opt = Array.from(el.options).find(o => o.value.toUpperCase() === v || o.text.toUpperCase() === v);
+    if (opt) { el.value = opt.value; }
+    else if (v) { el.add(new Option(value, value)); el.value = value; }  // keep unknown old values
+    else { el.selectedIndex = 0; }
+}
+
 function editRow(btn) {
     editMode       = true;
     editingRow     = btn.closest('tr');
@@ -875,12 +897,12 @@ function editRow(btn) {
     document.getElementById('mSuffix').value     = editingRow.getAttribute('data-suffix')   || '';
     document.getElementById('mContact').value    = editingRow.getAttribute('data-contact')  || '';
     document.getElementById('mID').value         = oldIDForUpdate;
-    document.getElementById('mCategory').value   = editingRow.getAttribute('data-category') || '';
-    document.getElementById('mProgram').value    = editingRow.getAttribute('data-program')  || '';
-    document.getElementById('mPurpose').value    = pk;
+    setSelect('mCategory', editingRow.getAttribute('data-category'));
+    setSelect('mProgram',  editingRow.getAttribute('data-program'));
+    setSelect('mPurpose',  pk);
 
     const oc = document.getElementById('otherPurposeContainer');
-    if (pk === 'OTHERS') {
+    if ((pk || '').toUpperCase() === 'OTHERS') {
         oc.style.display = 'block';
         document.getElementById('mOtherPurpose').value = pc.getAttribute('data-others-info') || '';
     } else {
@@ -1031,6 +1053,47 @@ function changeRole(email, newRole) {
             else { alert('❌ ' + (d.message || 'FAILED')); }
         })
         .catch(e => { console.error(e); alert('SYSTEM ERROR.'); });
+}
+
+/** ============================================================
+ *  EDIT REGISTERED USER
+ * ============================================================ */
+function editUser(btn) {
+    const r = btn.closest('tr');
+    const g = (a) => r.getAttribute(a) || '';
+    document.getElementById('uEmail').value   = g('data-email');
+    document.getElementById('uFirst').value   = g('data-fname');
+    document.getElementById('uMiddle').value  = g('data-mname');
+    document.getElementById('uLast').value    = g('data-lname');
+    document.getElementById('uSuffix').value  = g('data-suffix');
+    document.getElementById('uID').value      = g('data-idnum');
+    document.getElementById('uContact').value = g('data-contact');
+    setSelect('uCategory', g('data-category'));
+    setSelect('uProgram',  g('data-program'));
+    document.getElementById('userModal').style.display = 'flex';
+}
+
+function closeUserModal() { document.getElementById('userModal').style.display = 'none'; }
+
+function saveUser() {
+    const v = (id) => document.getElementById(id).value.trim();
+    if (!v('uFirst') || !v('uLast')) { alert('⚠️ FIRST AND LAST NAME ARE REQUIRED.'); return; }
+    const fd = new FormData();
+    fd.append('email',       v('uEmail'));
+    fd.append('first_name',  v('uFirst'));
+    fd.append('middle_name', v('uMiddle'));
+    fd.append('last_name',   v('uLast'));
+    fd.append('suffix',      v('uSuffix'));
+    fd.append('id_number',   v('uID'));
+    fd.append('contact',     v('uContact'));
+    fd.append('user_type',   v('uCategory'));
+    fd.append('course',      v('uProgram'));
+    const btn = document.getElementById('uSaveBtn'); btn.disabled = true; btn.innerText = 'SAVING...';
+    fetch('update_user.php', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => { if (d.status === 'success') { alert('✅ ' + d.message); location.reload(); } else alert('❌ ' + d.message); })
+        .catch(e => { console.error(e); alert('CONNECTION ERROR.'); })
+        .finally(() => { btn.disabled = false; btn.innerText = 'SAVE CHANGES'; });
 }
 
 /** ============================================================

@@ -50,109 +50,94 @@ if ($open = $inside->get_result()->fetch_assoc()) {
 }
 $inside->close();
 
-/** --- 5. DATA PREPARATION --- **/
-$email = $_SESSION['email'] ?? ''; 
-$first_name = $_SESSION['first_name'] ?? ''; 
-$last_name = $_SESSION['last_name'] ?? '';
-$profile_pic = $_SESSION['profile_pic'] ?? ''; 
-$id_no = ""; 
+/** --- 5. SAVED PROFILE (what the visitor filled in before, or what an admin edited) --- **/
+require_once 'profile.php';
+$email   = $_SESSION['email'] ?? '';
+$profile = get_profile($email) ?? array_fill_keys(PROFILE_FIELDS, '');
 
-if (!empty($email)) {
-    // Fetch profile
-    $stmt = $conn->prepare("SELECT first_name, last_name, profile_pic FROM users WHERE email = ? LIMIT 1");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $user_result = $stmt->get_result();
+$first_name  = $profile['first_name'];
+$last_name   = $profile['last_name'];
+$profile_pic = $profile['profile_pic'] ?? '';
+$id_no       = $profile['id_number'];          // locked once set; only an admin can change it
+$id_locked   = $id_no !== '';
+$_SESSION['first_name'] = $first_name;
+$_SESSION['last_name']  = $last_name;
 
-    if ($user_data = $user_result->fetch_assoc()) {
-        $first_name = $user_data['first_name'];
-        $last_name = $user_data['last_name'];
-        if(!empty($user_data['profile_pic'])) $profile_pic = $user_data['profile_pic'];
-        
-        $_SESSION['first_name'] = $first_name;
-        $_SESSION['last_name'] = $last_name;
-        $_SESSION['profile_pic'] = $profile_pic;
-    }
-    $stmt->close();
-
-    // Fetch previous ID
-    $id_stmt = $conn->prepare("SELECT id_number FROM library_logs WHERE email = ? ORDER BY id DESC LIMIT 1");
-    $id_stmt->bind_param("s", $email);
-    $id_stmt->execute();
-    $id_result = $id_stmt->get_result();
-    
-    if ($prev_log = $id_result->fetch_assoc()) {
-        $id_no = $prev_log['id_number']; 
-    }
-    $id_stmt->close();
-}
+// Values shown in the form (re-filled from POST if the form had an error)
+$val = [
+    'user_type' => $profile['user_type'],
+    'contact'   => $profile['contact'],
+    'mname'     => $profile['middle_name'],
+    'suffix'    => $profile['suffix'],
+    'course'    => $profile['course'],
+    'reason'    => canonical($profile['last_reason'] ?? '', array_keys($REASONS)),
+    'others'    => $profile['last_others'] ?? '',
+];
 
 // Avatar fallback
 if (empty($profile_pic)) {
-    $name_param = urlencode($first_name . " " . $last_name);
-    $profile_pic = "https://ui-avatars.com/api/?name=$name_param&background=1e7d32&color=fff&bold=true&size=512";
+    $profile_pic = "https://ui-avatars.com/api/?name=" . urlencode("$first_name $last_name") . "&background=1e7d32&color=fff&bold=true&size=512";
 }
 
 /** --- 6. LOG SUBMISSION HANDLING --- **/
 $error_msg = "";
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_log'])) {
-    
-    $id_no = trim($_POST['id_no']);
-    $session_fname = $_SESSION['first_name'];
-    $session_lname = $_SESSION['last_name'];
-    $session_email = $_SESSION['email'];
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['submit_log'])) {
 
-    // Active session check
-    $check_active = $conn->prepare("SELECT id FROM active_sessions WHERE id_number = ? LIMIT 1");
-    $check_active->bind_param("s", $id_no);
-    $check_active->execute();
-    $res_active = $check_active->get_result();
+    $val = [
+        'user_type' => trim($_POST['user_type'] ?? ''),
+        'contact'   => trim($_POST['contact'] ?? ''),
+        'mname'     => trim($_POST['mname'] ?? ''),
+        'suffix'    => trim($_POST['suffix'] ?? ''),
+        'course'    => trim($_POST['course'] ?? ''),
+        'reason'    => trim($_POST['reason'] ?? ''),
+        'others'    => trim($_POST['others_detail'] ?? ''),
+    ];
+    if (!$id_locked) $id_no = strtoupper(trim($_POST['id_no'] ?? ''));
 
-    if ($res_active->num_rows > 0) {
-        $error_msg = "ID ALREADY IN USE: This ID is currently logged in the library.";
+    if ($val['user_type'] === '' || $val['contact'] === '' || $val['course'] === '' || $val['reason'] === '') {
+        $error_msg = "Please complete all required fields.";
+    } elseif ($val['reason'] === 'Others' && $val['others'] === '') {
+        $error_msg = "Please specify your reason.";
+    } elseif ($id_no !== '' && ($owner = id_owner_conflict($id_no, $email))) {
+        $error_msg = "THIS I.D. NUMBER IS LINKED TO ANOTHER ACCOUNT. PLEASE USE YOUR OWN I.D.";
     } else {
-        // ID ownership check (Fixing subquery for better reliability)
-        $check_owner = $conn->prepare("
-            SELECT first_name FROM library_logs WHERE id_number = ? AND email != ? 
-            UNION 
-            SELECT first_name FROM active_sessions WHERE id_number = ? AND email != ? 
-            LIMIT 1
-        ");
-        $check_owner->bind_param("ssss", $id_no, $session_email, $id_no, $session_email);
-        $check_owner->execute();
-        if ($check_owner->get_result()->num_rows > 0) {
-            $error_msg = "THIS I.D. NUMBER IS LINKED TO ANOTHER ACCOUNT. PLEASE USE YOUR OWN I.D.";
+        $check_active = $conn->prepare("SELECT id FROM active_sessions WHERE id_number = ? AND id_number <> 'N/A' AND id_number <> '' LIMIT 1");
+        $check_active->bind_param("s", $id_no);
+        $check_active->execute();
+
+        if ($check_active->get_result()->num_rows > 0) {
+            $error_msg = "ID ALREADY IN USE: This ID is currently logged in the library.";
         } else {
-            // Process log entry
-            $time_in_val = date("h:i:s A");
-            $date_visited_val = date("Y-m-d");
+            $conn->begin_transaction();
+            try {
+                // Save the profile so it is pre-filled next time (and synced to old records)
+                $p = save_profile($email, [
+                    'first_name' => $first_name, 'last_name' => $last_name,
+                    'middle_name' => $val['mname'], 'suffix' => $val['suffix'],
+                    'id_number' => $id_no, 'contact' => $val['contact'],
+                    'user_type' => $val['user_type'], 'course' => $val['course'],
+                ]);
 
-            $sql = "INSERT INTO active_sessions (user_type, id_number, contact, first_name, middle_name, last_name, suffix, course, reason, others_detail, time_in, date_visited, email) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            
-            $stmt = $conn->prepare($sql);
-            $mname = strtoupper($_POST['mname'] ?? '');
-            $suffix = strtoupper($_POST['suffix'] ?? '');
-            $u_type = $_POST['user_type'] ?? '';
-            $contact = $_POST['contact'] ?? '';
-            $course = $_POST['course'] ?? '';
-            $reason = $_POST['reason'] ?? '';
-            $others = $_POST['others_detail'] ?? '';
-            
-            $stmt->bind_param("sssssssssssss", 
-                $u_type, $id_no, $contact, 
-                $session_fname, $mname, $session_lname, 
-                $suffix, $course, $reason, 
-                $others, $time_in_val, $date_visited_val, $session_email
-            );
+                // Start the visit
+                $time_in = date("h:i:s A");
+                $today   = date("Y-m-d");
+                $idLog   = $p['id_number'] !== '' ? $p['id_number'] : 'N/A';
+                $reason  = canonical($val['reason'], array_keys($REASONS));
+                $others  = $reason === 'Others' ? $val['others'] : '';
 
-            if ($stmt->execute()) {
-                // IMPORTANT: Sync session active_id for out.php
+                $stmt = $conn->prepare("INSERT INTO active_sessions (user_type, id_number, contact, first_name, middle_name, last_name, suffix, course, reason, others_detail, time_in, date_visited, email)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->bind_param("sssssssssssss",
+                    $p['user_type'], $idLog, $p['contact'], $p['first_name'], $p['middle_name'], $p['last_name'],
+                    $p['suffix'], $p['course'], $reason, $others, $time_in, $today, $email);
+                $stmt->execute();
                 $_SESSION['active_id'] = $conn->insert_id;
-                
+                $conn->commit();
+
                 header("Location: out.php");
                 exit();
-            } else {
+            } catch (Exception $ex) {
+                $conn->rollback();
                 $error_msg = "Could not save your log. Please try again.";
             }
         }
@@ -514,11 +499,8 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
                         <div class="flex-user-type">
                             <label>User Type<span class="req">*</span></label>
                             <select name="user_type" required>
-                                <option value="" disabled selected>Select Type</option>
-                                <option value="Student">Student</option>
-                                <option value="Guest">Guest</option>
-                                <option value="Faculty Member">Faculty Member</option>
-                                <option value="Employee">Employee</option>
+                                <option value="" disabled <?php echo $val['user_type'] === '' ? 'selected' : ''; ?>>Select Type</option>
+                                <?php render_options($USER_TYPES, $val['user_type']); ?>
                             </select>
                         </div>
 
@@ -531,24 +513,15 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
                                 </div>
                             <?php endif; ?>
                             
-                            <input type="text" id="id_input" name="id_no" placeholder="XX-XXXXX-XXX" 
-                                   oninput="clearError()" 
-                                   value="<?php echo !empty($id_no) ? htmlspecialchars($id_no) : (isset($_POST['id_no']) ? htmlspecialchars($_POST['id_no']) : ''); ?>" 
-                                   
-                                   <?php 
-                                     if (!empty($id_no) && empty($error_msg)) {
-                                         echo 'readonly style="background-color: #e9ecef; cursor: not-allowed;"';
-                                     } 
-                                     
-                                     if (!empty($error_msg)) {
-                                         echo 'style="border: 2px solid #dc3545;"';
-                                     }
-                                   ?>>
+                            <input type="text" id="id_input" name="id_no" placeholder="XX-XXXXX-XXX"
+                                   oninput="clearError()" value="<?php echo e($id_no); ?>"
+                                   <?php echo $id_locked ? 'readonly title="Contact the library staff to change your ID number" style="background-color:#e9ecef;cursor:not-allowed;"' : ''; ?>
+                                   <?php echo $error_msg ? 'style="border:2px solid #dc3545;"' : ''; ?>>
                         </div>
 
                         <div class="flex-contact">
                             <label>Contact Number<span class="req">*</span></label>
-                            <input type="tel" name="contact" placeholder="09XXXXXXXXX" required>
+                            <input type="tel" name="contact" placeholder="09XXXXXXXXX" value="<?php echo e($val['contact']); ?>" required>
                         </div>
                     </div>
 
@@ -565,7 +538,7 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
     
     <div class="flex-1">
         <label>Middle Name</label>
-        <input type="text" name="mname" placeholder="Optional">
+        <input type="text" name="mname" placeholder="Optional" value="<?php echo e($val['mname']); ?>">
     </div>
     
     <div class="flex-1">
@@ -580,7 +553,7 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
                         
                         <div style="width: 80px;">
                             <label>Suffix</label>
-                            <input type="text" name="suffix" placeholder="Opt.">
+                            <input type="text" name="suffix" placeholder="Opt." value="<?php echo e($val['suffix']); ?>">
                         </div>
                     </div>
 
@@ -588,112 +561,8 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
                         <div class="flex-1">
                             <label>Program<span class="req">*</span></label>
                             <select name="course" required>
-                                <option value="" selected disabled>Select Program / Course</option>
-                                <option value="Not Applicable">Not Applicable (Faculty / Staff / Guest)</option>
-                                <optgroup label="UNDERGRADUATE PROGRAMS">
-                                    <option value="B Elementary Education">B Elementary Education</option>
-                                    <option value="B Library and Information Science">B Library and Information Science</option>
-                                    <option value="B Music in Choral Conducting">B Music in Choral Conducting</option>
-                                    <option value="B Music in Music Education">B Music in Music Education</option>
-                                    <option value="B Music in Piano">B Music in Piano</option>
-                                    <option value="B Music in Voice">B Music in Voice</option>
-                                    <option value="B Public Administration">B Public Administration</option>
-                                    <option value="BA Broadcasting">BA Broadcasting</option>
-                                    <option value="BA Communication">BA Communication</option>
-                                    <option value="BA Economics">BA Economics</option>
-                                    <option value="BA Foreign Service">BA Foreign Service</option>
-                                    <option value="BA Journalism">BA Journalism</option>
-                                    <option value="BA Political Science">BA Political Science</option>
-                                    <option value="BEEd with Specialization in Preschool Education">BEEd with Specialization in Preschool Education</option>
-                                    <option value="BEEd with Specialization in Special Education">BEEd with Specialization in Special Education</option>
-                                    <option value="BS Accountancy">BS Accountancy</option>
-                                    <option value="BS Accounting Information System">BS Accounting Information System</option>
-                                    <option value="BS Agriculture Major in Animal Science">BS Agriculture Major in Animal Science</option>
-                                    <option value="BS Agriculture Major in Crop Science">BS Agriculture Major in Crop Science</option>
-                                    <option value="BS Architecture">BS Architecture</option>
-                                    <option value="BS Astronomy">BS Astronomy</option>
-                                    <option value="BS Biology">BS Biology</option>
-                                    <option value="BS Civil Engineering">BS Civil Engineering</option>
-                                    <option value="BS Computer Science">BS Computer Science</option>
-                                    <option value="BS Criminology">BS Criminology</option>
-                                    <option value="BS Electrical Engineering">BS Electrical Engineering</option>
-                                    <option value="BS Electronics Engineering">BS Electronics Engineering</option>
-                                    <option value="BS Entrepreneurship">BS Entrepreneurship</option>
-                                    <option value="BS Industrial Engineering">BS Industrial Engineering</option>
-                                    <option value="BS Information System">BS Information System</option>
-                                    <option value="BS Information Technology">BS Information Technology</option>
-                                    <option value="BS Mechanical Engineering">BS Mechanical Engineering</option>
-                                    <option value="BS Medical Technology">BS Medical Technology</option>
-                                    <option value="BS Nursing">BS Nursing</option>
-                                    <option value="BS Physical Therapy">BS Physical Therapy</option>
-                                    <option value="BS Psychology">BS Psychology</option>
-                                    <option value="BS Real Estate Management">BS Real Estate Management</option>
-                                    <option value="BS Respiratory Therapy">BS Respiratory Therapy</option>
-                                    <option value="BSBA Major in Financial Management">BSBA Major in Financial Management</option>
-                                    <option value="BSBA Major in Human Resource Development Management">BSBA Major in Human Resource Development Management</option>
-                                    <option value="BSBA Major in Legal Management">BSBA Major in Legal Management</option>
-                                    <option value="BSBA Major in Marketing Management">BSBA Major in Marketing Management</option>
-                                    <option value="BSEd Major in English">BSEd Major in English</option>
-                                    <option value="BSEd Major in Filipino">BSEd Major in Filipino</option>
-                                    <option value="BSEd Major in Mathematics">BSEd Major in Mathematics</option>
-                                    <option value="BSEd Major in Music, Arts, and Physical Education">BSEd Major in Music, Arts, and Physical Education</option>
-                                    <option value="BSEd Major in Science">BSEd Major in Science</option>
-                                    <option value="BSEd Major in Social Studies">BSEd Major in Social Studies</option>
-                                    <option value="BSEd Major in Technology and Livelihood Education">BSEd Major in Technology and Livelihood Education</option>
-                                    <option value="BSEMC with Specialization in Digital Animation Technology">BSEMC with Specialization in Digital Animation Technology</option>
-                                    <option value="BSEMC with Specialization in Game Development">BSEMC with Specialization in Game Development</option>
-                                    <option value="Diploma in Midwifery">Diploma in Midwifery</option>
-                                </optgroup>
-                                <optgroup label="GRADUATE PROGRAMS">
-                                    <option value="Doctor in Business Administration">Doctor in Business Administration</option>
-                                    <option value="Doctor of Medicine">Doctor of Medicine</option>
-                                    <option value="Juris Doctor Program">Juris Doctor Program</option>
-                                    <option value="MAEd Major in Early Childhood Education">MAEd Major in Early Childhood Education</option>
-                                    <option value="MAEd Major in Educational Management">MAEd Major in Educational Management</option>
-                                    <option value="MAEd Major in Educational Psychology">MAEd Major in Educational Psychology</option>
-                                    <option value="MAEd Major in Educational Technology">MAEd Major in Educational Technology</option>
-                                    <option value="MAEd Major in Environmental Education">MAEd Major in Environmental Education</option>
-                                    <option value="MAEd Major in Filipino">MAEd Major in Filipino</option>
-                                    <option value="MAEd Major in Guidance and Counseling">MAEd Major in Guidance and Counseling</option>
-                                    <option value="MAEd Major in Language Education">MAEd Major in Language Education</option>
-                                    <option value="MAEd Major in Mathematics Education">MAEd Major in Mathematics Education</option>
-                                    <option value="MAEd Major in Reading Education">MAEd Major in Reading Education</option>
-                                    <option value="MAEd Major in Science Education">MAEd Major in Science Education</option>
-                                    <option value="MAEd Major in Social Science">MAEd Major in Social Science</option>
-                                    <option value="MAEd Major in Special Education and Inclusive Education">MAEd Major in Special Education and Inclusive Education</option>
-                                    <option value="Master in Business Administration">Master in Business Administration</option>
-                                    <option value="MBA Major in Human Resource Management">MBA Major in Human Resource Management</option>
-                                    <option value="MBA Major in Organizational Development">MBA Major in Organizational Development</option>
-                                    <option value="PhD in Education Major in Bilingual Education">PhD in Education Major in Bilingual Education</option>
-                                    <option value="PhD in Education Major in Early Childhood Education">PhD in Education Major in Early Childhood Education</option>
-                                    <option value="PhD in Education Major in Educational Leadership">PhD in Education Major in Educational Leadership</option>
-                                    <option value="PhD in Education Major in Educational Management">PhD in Education Major in Educational Management</option>
-                                    <option value="PhD in Education Major in Guidance & Counseling">PhD in Education Major in Guidance & Counseling</option>
-                                    <option value="PhD in Education Major in Instructional Leadership">PhD in Education Major in Instructional Leadership</option>
-                                    <option value="PhD in Education Major in Special Education and Inclusive Education">PhD in Education Major in Special Education and Inclusive Education</option>
-                                </optgroup>
-                                <optgroup label="COMPLETE BASIC EDUCATION (K-Preschool)">
-                                    <option value="Preschool">Preschool</option>
-                                    <option value="Grade School">Grade School</option>
-                                    <option value="Junior High School">Junior High School</option>
-                                    <option value="Senior High School">Senior High School</option>
-                                    <option value="Special Education Program">Special Education Program</option>
-                                </optgroup>
-                                <optgroup label="OTHER PROGRAMS / ETEEAP / MCLE">
-                                    <option value="Alternative Learning System (ALS)">Alternative Learning System (ALS)</option>
-                                    <option value="Certificate Program for Sign Language Interpreters">Certificate Program for Sign Language Interpreters</option>
-                                    <option value="Certificate Program in International Relations and ASEAN Studies">Certificate Program in International Relations and ASEAN Studies</option>
-                                    <option value="Certificate Program in Korean Language">Certificate Program in Korean Language</option>
-                                    <option value="Certificate Program in Mandarin Language">Certificate Program in Mandarin Language</option>
-                                    <option value="Certificate Program in Russian Language">Certificate Program in Russian Language</option>
-                                    <option value="Distance Education">Distance Education</option>
-                                    <option value="MAEd Major Educational Management">MAEd Major Educational Management</option>
-                                    <option value="Expanded Tertiary Education Equivalency and Accreditation Program (ETEEAP)">Expanded Tertiary Education Equivalency and Accreditation Program (ETEEAP)</option>
-                                    <option value="BSBA Major in Financial Management (ETEEAP)">BSBA Major in Financial Management (ETEEAP)</option>
-                                    <option value="BSBA Major in Marketing Management (ETEEAP)">BSBA Major in Marketing Management (ETEEAP)</option>
-                                    <option value="BSBA Major in Human Resource Development Management (ETEEAP)">BSBA Major in Human Resource Development Management (ETEEAP)</option>
-                                    <option value="Mandatory Continuing Legal Education (MCLE)">Mandatory Continuing Legal Education (MCLE)</option>
-                                </optgroup>
+                                <option value="" disabled <?php echo $val['course'] === '' ? 'selected' : ''; ?>>Select Program / Course</option>
+                                <?php render_programs($val['course']); ?>
                             </select>
                         </div>
                         
@@ -706,23 +575,13 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
                     <div>
                         <label>Reason for Using the Library:<span class="req">*</span></label>
                         <select id="reason-select" name="reason" onchange="toggleOthers()" required>
-                            <option value="" selected disabled>Select Reason</option>
-                            <option value="Not Applicable">Not Applicable (Faculty / Staff / Guest)</option>
-                            <option value="Research">Research</option>
-                            <option value="Study">Study</option>
-                            <option value="Borrowing">Borrowing Books</option>
-                            <option value="Returning">Returning Books</option>
-                            <option value="Group Study">Group Study</option>
-                            <option value="Meeting">Meeting</option>
-                            <option value="Internet Use">Internet Use</option>
-                            <option value="Printing/Photocopy">Printing/Photocopy</option>
-                            <option value="Academic Requirement">Academic Requirement</option>
-                            <option value="Others">Others</option>
+                            <option value="" disabled <?php echo $val['reason'] === '' ? 'selected' : ''; ?>>Select Reason</option>
+                            <?php render_options($REASONS, $val['reason'], true); ?>
                         </select>
 
                         <div id="others-section">
                             <label style="margin-top: 8px;">Others (Please Specify):<span class="req">*</span></label>
-                            <textarea id="others-text" name="others_detail" placeholder="Please specify..."></textarea>
+                            <textarea id="others-text" name="others_detail" placeholder="Please specify..."><?php echo e($val['others']); ?></textarea>
                         </div>
                     </div>
                 </div>
@@ -790,35 +649,8 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
             window.history.replaceState(null, null, window.location.href);
         }
 
-        /* --- SESSION PERSISTENCE (SAVE) --- */
-        document.getElementById('libraryForm').addEventListener('input', function(e) {
-            const formData = new FormData(this);
-            const data = {};
-            formData.forEach((value, key) => {
-                if(key !== 'time_in_display') {
-                    data[key] = value;
-                }
-            });
-            sessionStorage.setItem('libraryFormData', JSON.stringify(data));
-        });
-
-        /* --- SESSION PERSISTENCE (RESTORE) --- */
-        window.addEventListener('load', function() {
-            const savedData = sessionStorage.getItem('libraryFormData');
-            if (savedData) {
-                const data = JSON.parse(savedData);
-                const form = document.getElementById('libraryForm');
-                
-                Object.keys(data).forEach(key => {
-                    const input = form.elements[key];
-                    if (input) {
-                        input.value = data[key];
-                    }
-                });
-                
-                if (typeof toggleOthers === "function") toggleOthers();
-            }
-        });
+        /* Saved details are pre-filled by the server, so show "Others" box if needed */
+        toggleOthers();
 
         /* --- SESSION CLEANUP (LOGOUT/SUBMIT) --- */
         const logoutBtn = document.querySelector('.btn-logout');

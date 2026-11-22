@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $email     = trim($_POST['email'] ?? '');
 $id_number = trim($_POST['id_number'] ?? '');
-if ($id_number === 'PENDING/NO LOGS') $id_number = '';
+if (in_array($id_number, ['PENDING/NO LOGS', 'NOT SET'], true)) $id_number = '';
 
 if ($email === '') {
     echo "missing_email";

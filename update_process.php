@@ -3,6 +3,8 @@
 header('Content-Type: application/json');
 require_once 'auth.php';
 require_admin_api();
+require_once 'profile.php';
+ensure_profile_schema();
 
 
 /** --- 2. INPUT HANDLING & VALIDATION --- **/
@@ -14,9 +16,10 @@ $middle_name   = trim($_POST['middle_name'] ?? '');
 $last_name     = trim($_POST['last_name'] ?? '');
 $suffix        = trim($_POST['suffix'] ?? '');
 $contact       = trim($_POST['contact'] ?? '');
-$u_type        = trim($_POST['user_type'] ?? ''); 
-$course        = trim($_POST['course'] ?? '');    
-$reason        = trim($_POST['reason'] ?? '');    
+$norm          = normalize_profile(['user_type' => $_POST['user_type'] ?? '', 'course' => $_POST['course'] ?? '']);
+$u_type        = $norm['user_type'];
+$course        = $norm['course'] ?: 'Not Applicable';
+$reason        = canonical($_POST['reason'] ?? '', array_keys($REASONS));
 $others_detail = trim($_POST['others_detail'] ?? ''); 
 
 if (empty($session_id) || empty($new_id) || empty($old_id)) {
@@ -60,6 +63,25 @@ try {
         $stmtV->bind_param("ssis", $reason, $others_detail, $session_id, $new_id);
         $stmtV->execute();
         $stmtV->close();
+    }
+
+    /** --- 3.3 PHASE 3: KEEP REGISTERED ACCOUNTS IN SYNC --- **/
+    // If these records belong to a registered user, save the edit to their profile too,
+    // so their form is pre-filled with the corrected details next time they log in.
+    $emails = [];
+    foreach ($visitTables as $table) {
+        $q = $conn->prepare("SELECT DISTINCT email FROM $table WHERE (id = ? OR (id_number = ? AND id_number <> 'N/A')) AND email IS NOT NULL AND email <> ''");
+        $q->bind_param("is", $session_id, $new_id);
+        $q->execute();
+        $r = $q->get_result();
+        while ($row = $r->fetch_assoc()) $emails[$row['email']] = true;
+    }
+    foreach (array_keys($emails) as $em) {
+        save_profile($em, [
+            'first_name' => $first_name, 'middle_name' => $middle_name, 'last_name' => $last_name,
+            'suffix' => $suffix, 'id_number' => $new_id, 'contact' => $contact,
+            'user_type' => $u_type, 'course' => $course,
+        ]);
     }
 
     /** --- 4. EXECUTION & RESPONSE --- **/
