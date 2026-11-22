@@ -55,6 +55,73 @@ function ensure_profile_schema() {
     }
 }
 
+/* ---------------------------------------------------------------
+   Clean up old records so they use the SAME values as the visitor
+   form's dropdowns (e.g. "STUDENT" -> "Student", "STUDY" -> "Study",
+   "N/A" -> "Not Applicable", "BSIT" -> "BS Information Technology").
+   Safe to run any number of times; only changes rows that differ.
+   --------------------------------------------------------------- */
+const PROGRAM_ALIASES = [
+    'N/A' => 'Not Applicable', 'NA' => 'Not Applicable', 'NONE' => 'Not Applicable',
+    'BSIT' => 'BS Information Technology', 'BS IT' => 'BS Information Technology',
+    'BSCS' => 'BS Computer Science', 'BS CS' => 'BS Computer Science',
+    'BSIS' => 'BS Information System', 'BSEMC' => 'BSEMC with Specialization in Game Development',
+    'BSA' => 'BS Accountancy', 'BSAIS' => 'BS Accounting Information System',
+    'BSN' => 'BS Nursing', 'BSPSY' => 'BS Psychology', 'BS PSYCH' => 'BS Psychology', 'BSPSYCH' => 'BS Psychology',
+    'BSCE' => 'BS Civil Engineering', 'BSEE' => 'BS Electrical Engineering', 'BSECE' => 'BS Electronics Engineering',
+    'BSME' => 'BS Mechanical Engineering', 'BSIE' => 'BS Industrial Engineering', 'BSARCH' => 'BS Architecture',
+    'BSCRIM' => 'BS Criminology', 'BSMT' => 'BS Medical Technology', 'BSMEDTECH' => 'BS Medical Technology',
+    'BSPT' => 'BS Physical Therapy', 'BSRT' => 'BS Respiratory Therapy', 'BSBIO' => 'BS Biology',
+    'BSENTREP' => 'BS Entrepreneurship', 'BSREM' => 'BS Real Estate Management',
+    'ABCOMM' => 'BA Communication', 'ABPOLSCI' => 'BA Political Science', 'ABECON' => 'BA Economics',
+    'SHS' => 'Senior High School', 'JHS' => 'Junior High School', 'MBA' => 'Master in Business Administration',
+];
+
+function normalize_all_records() {
+    global $conn, $USER_TYPES, $REASONS;
+
+    $maps = [
+        'user_type' => array_combine(array_map('strtoupper', $USER_TYPES), $USER_TYPES)
+                       + ['FACULTY' => 'Faculty Member', 'VISITOR' => 'Guest', 'STAFF' => 'Employee'],
+        'course'    => array_combine(array_map('strtoupper', all_programs()), all_programs()) + PROGRAM_ALIASES,
+        'reason'    => array_combine(array_map('strtoupper', array_keys($REASONS)), array_keys($REASONS))
+                       + ['BORROWING BOOKS' => 'Borrowing', 'RETURNING BOOKS' => 'Returning',
+                          'PRINTING / PHOTOCOPY' => 'Printing/Photocopy', 'PRINTING' => 'Printing/Photocopy',
+                          'PHOTOCOPY' => 'Printing/Photocopy', 'INTERNET' => 'Internet Use', 'OTHER' => 'Others'],
+    ];
+    $tables = [
+        'active_sessions'    => ['user_type', 'course', 'reason'],
+        'library_logs'       => ['user_type', 'course', 'reason'],
+        'visitor_masterlist' => ['user_type', 'course'],
+        'users'              => ['user_type', 'course'],
+    ];
+
+    foreach ($tables as $table => $cols) {
+        foreach ($cols as $col) {
+            $res = $conn->query("SELECT DISTINCT `$col` AS v FROM `$table` WHERE `$col` IS NOT NULL AND `$col` <> ''");
+            while ($row = $res->fetch_assoc()) {
+                $old = $row['v'];
+                $key = strtoupper(trim(preg_replace('/\s+/', ' ', $old)));
+                if (!isset($maps[$col][$key]) || $maps[$col][$key] === $old) continue;
+                $new = $maps[$col][$key];
+                // BINARY: only touch rows whose spelling is exactly the old one
+                $stmt = $conn->prepare("UPDATE `$table` SET `$col` = ? WHERE BINARY `$col` = BINARY ?");
+                $stmt->bind_param("ss", $new, $old);
+                $stmt->execute();
+            }
+        }
+    }
+
+    // Names, suffix and ID numbers are stored in CAPITALS everywhere
+    foreach (['active_sessions', 'library_logs', 'visitor_masterlist'] as $table) {
+        $conn->query("UPDATE `$table` SET first_name = UPPER(first_name), middle_name = UPPER(middle_name),
+                      last_name = UPPER(last_name), suffix = UPPER(suffix), id_number = UPPER(id_number)
+                      WHERE BINARY first_name <> BINARY UPPER(first_name) OR BINARY middle_name <> BINARY UPPER(middle_name)
+                         OR BINARY last_name <> BINARY UPPER(last_name) OR BINARY suffix <> BINARY UPPER(suffix)
+                         OR BINARY id_number <> BINARY UPPER(id_number)");
+    }
+}
+
 /** Most recent visit row (inside now, or past) for an e-mail */
 function latest_visit($email) {
     global $conn;
@@ -81,8 +148,8 @@ function normalize_profile(array $p) {
     if ($type === 'FACULTY') $out['user_type'] = 'Faculty Member';
     else $out['user_type'] = canonical($out['user_type'], $USER_TYPES);
 
-    $out['course'] = canonical($out['course'], all_programs());
-    if (strtoupper($out['course']) === 'N/A') $out['course'] = 'Not Applicable';
+    $ck = strtoupper(preg_replace('/\s+/', ' ', $out['course']));
+    $out['course'] = PROGRAM_ALIASES[$ck] ?? canonical($out['course'], all_programs());
 
     foreach (['first_name', 'middle_name', 'last_name', 'suffix', 'id_number'] as $f) {
         $out[$f] = strtoupper($out[$f]);

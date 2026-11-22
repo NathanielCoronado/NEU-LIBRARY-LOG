@@ -4,6 +4,7 @@ require_once 'auth.php';
 require_admin();   // only admins can open the dashboard
 require_once 'profile.php';
 ensure_profile_schema();
+normalize_all_records();   // old records -> same values as the visitor form's choices
 ?>
 <!DOCTYPE html>
 <html lang="en">
