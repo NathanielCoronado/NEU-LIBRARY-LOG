@@ -188,6 +188,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['login'])) {
     <link rel="icon" href="favicon.ico">
     <meta name="theme-color" content="#004aad">
     <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="tricolor.css">
 </head>
 <body>
     <div class="header-container">

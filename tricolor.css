@@ -1,0 +1,62 @@
+/* =========================================================
+   tricolor.css
+   ONE definition of the green-white-red NEU border, used by
+   every page (public pages + admin) so it looks identical
+   everywhere. Loaded after each page's own styles.
+   ========================================================= */
+:root {
+    --tri-h: 24px;            /* total bar height on desktop   */
+    --tri-green: #1e7d32;
+    --tri-white: #ffffff;
+    --tri-red: #c62828;
+}
+@media (max-width: 768px) { :root { --tri-h: 16px; } }
+
+/* Login/signup-style pages draw the bars on .header-container;
+   the visitor form, Out screen and admin draw them on <body>. */
+.header-container::before, .header-container::after,
+body.form-page::before, body.form-page::after,
+body.out-page::before, body.out-page::after,
+body.admin-page::before, body.admin-page::after {
+    content: "" !important;
+    display: block !important;
+    position: fixed !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: var(--tri-h) !important;
+    z-index: 3000 !important;
+    pointer-events: none;
+    animation: triSlide 1.2s ease-out forwards !important;
+}
+
+/* TOP: green / white / red */
+.header-container::before,
+body.form-page::before, body.out-page::before, body.admin-page::before {
+    top: 0 !important;
+    bottom: auto !important;
+    background: linear-gradient(to bottom,
+        var(--tri-green) 0 33.33%, var(--tri-white) 33.33% 66.66%, var(--tri-red) 66.66% 100%) !important;
+    transform: translateX(-100%);
+}
+
+/* BOTTOM: red / white / green (mirror of the top) */
+.header-container::after,
+body.form-page::after, body.out-page::after, body.admin-page::after {
+    bottom: 0 !important;
+    top: auto !important;
+    background: linear-gradient(to bottom,
+        var(--tri-red) 0 33.33%, var(--tri-white) 33.33% 66.66%, var(--tri-green) 66.66% 100%) !important;
+    transform: translateX(100%);
+}
+
+@keyframes triSlide { to { transform: translateX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .header-container::before, .header-container::after,
+    body.form-page::before, body.form-page::after, body.out-page::before, body.out-page::after,
+    body.admin-page::before, body.admin-page::after { animation: none !important; transform: none !important; }
+}
+
+/* Keep content clear of the fixed bars */
+body.form-page, body.out-page { padding-top: var(--tri-h) !important; padding-bottom: var(--tri-h) !important; }
+body.admin-page { padding-top: var(--tri-h) !important; padding-bottom: var(--tri-h) !important; }

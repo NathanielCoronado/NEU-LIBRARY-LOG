@@ -156,11 +156,10 @@ if ($user) {
     <link rel="icon" href="favicon.ico">
     <meta name="theme-color" content="#004aad">
     <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="tricolor.css">
 </head>
 <body>
 
-    <div class="page-border border-top"></div>
-    <div class="page-border border-bottom"></div>
 
     <div class="header-container">
         <div class="background-image"></div>

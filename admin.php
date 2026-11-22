@@ -12,10 +12,11 @@ require_admin();   // only admins can open the dashboard
     <link rel="icon" href="favicon.ico">
     <meta name="theme-color" content="#004aad">
     <link rel="stylesheet" href="admin.css">
+    <link rel="stylesheet" href="tricolor.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
-<body>
+<body class="admin-page">
 
 <!-- Mobile top bar (visible on phones/tablets only) -->
 <div class="mobile-topbar">

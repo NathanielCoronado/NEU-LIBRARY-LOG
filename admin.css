@@ -69,7 +69,7 @@ body::after {
     box-shadow: 4px 0 15px rgba(0,0,0,0.1);
     z-index: 1001; 
     position: relative; 
-    height: calc(100vh - 70px); 
+    height: calc(100vh - 2 * var(--tri-h, 24px)); 
 }
 
 .admin-logo {
@@ -228,13 +228,11 @@ td.id-cell { white-space: nowrap; }
 
 @media (max-width: 1024px) {
     /* Page scrolls normally; sidebar becomes a slide-in drawer */
-    body { display: block; height: auto; min-height: 100vh; overflow: auto; padding: 0 0 12px; }
-    body::before { position: sticky; top: 0; height: 12px; display: block; }
-    body::after { display: none; }
+    body { display: block; height: auto; min-height: 100vh; overflow: auto; }
 
     .mobile-topbar {
         display: flex; align-items: center; gap: 12px;
-        position: sticky; top: 0; z-index: 1500;
+        position: sticky; top: var(--tri-h, 16px); z-index: 1500;
         background: var(--neu-blue); color: #fff;
         padding: 10px 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.15);
     }
@@ -248,8 +246,8 @@ td.id-cell { white-space: nowrap; }
     body.sidebar-open .hamburger span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 
     .sidebar {
-        position: fixed; top: 0; left: 0; bottom: 0;
-        height: 100vh; height: 100dvh; width: 270px;
+        position: fixed; top: var(--tri-h, 16px); left: 0; bottom: var(--tri-h, 16px);
+        height: auto; width: 270px;
         padding: 30px 18px; overflow-y: auto;
         transform: translateX(-100%); transition: transform 0.3s ease;
         z-index: 2100;

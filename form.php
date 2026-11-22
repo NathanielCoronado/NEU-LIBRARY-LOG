@@ -496,6 +496,7 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
     <link rel="icon" href="favicon.ico">
     <meta name="theme-color" content="#004aad">
     <link rel="stylesheet" href="responsive.css">
+    <link rel="stylesheet" href="tricolor.css">
 </head>
 <body class="form-page">
     <div class="main-wrapper">
