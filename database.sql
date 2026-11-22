@@ -1,14 +1,17 @@
 -- =====================================================================
 --  NEU LIBRARY LOG — DATABASE SCHEMA
---  Import this in phpMyAdmin (Import tab) or:  mysql -u root -p < database.sql
+--  HOW TO IMPORT
+--    1. Create/select your database first (on InfinityFree: Control Panel >
+--       MySQL Databases, then open it in phpMyAdmin).
+--    2. phpMyAdmin > Import > choose this file > Go.
+--  For a local XAMPP setup you can create one first with:
+--       CREATE DATABASE neu_library CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 --
 --  NOTE: Rebuilt from the queries the PHP files use. If you still have the
 --  original database, export it from phpMyAdmin instead — that is always
 --  the most accurate copy.
 -- =====================================================================
 
-CREATE DATABASE IF NOT EXISTS neu_library CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE neu_library;
 
 -- ---------------------------------------------------------------------
 -- Registered accounts (email/password or Google)

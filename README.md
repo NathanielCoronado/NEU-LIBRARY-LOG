@@ -133,9 +133,7 @@ flowchart LR
 
 2. **Create the database**
 
-   In **phpMyAdmin → Import**, select [`database.sql`](database.sql). This creates the `neu_library` database and all tables.
-
-   > **Shared hosting (e.g. InfinityFree):** create the database in your host's control panel first, then remove the `CREATE DATABASE` and `USE` lines from `database.sql` before importing.
+   Create an empty database (XAMPP: `neu_library` in phpMyAdmin; InfinityFree: **Control Panel → MySQL Databases**), open it in **phpMyAdmin → Import**, and select [`database.sql`](database.sql). This creates all five tables.
 
 3. **Configure the application**
    ```bash
