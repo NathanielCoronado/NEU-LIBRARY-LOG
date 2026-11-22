@@ -7,6 +7,8 @@
 
 $USER_TYPES = ['Student', 'Faculty Member', 'Employee', 'Guest'];
 
+$SUFFIXES = ['JR', 'SR', 'II', 'III', 'IV', 'V'];
+
 $REASONS = [
     'Research'             => 'Research',
     'Study'                => 'Study',

@@ -115,9 +115,9 @@ function normalize_all_records() {
     // Names, suffix and ID numbers are stored in CAPITALS everywhere
     foreach (['active_sessions', 'library_logs', 'visitor_masterlist'] as $table) {
         $conn->query("UPDATE `$table` SET first_name = UPPER(first_name), middle_name = UPPER(middle_name),
-                      last_name = UPPER(last_name), suffix = UPPER(suffix), id_number = UPPER(id_number)
+                      last_name = UPPER(last_name), suffix = UPPER(REPLACE(suffix, '.', '')), id_number = UPPER(id_number)
                       WHERE BINARY first_name <> BINARY UPPER(first_name) OR BINARY middle_name <> BINARY UPPER(middle_name)
-                         OR BINARY last_name <> BINARY UPPER(last_name) OR BINARY suffix <> BINARY UPPER(suffix)
+                         OR BINARY last_name <> BINARY UPPER(last_name) OR BINARY suffix <> BINARY UPPER(REPLACE(suffix, '.', ''))
                          OR BINARY id_number <> BINARY UPPER(id_number)");
     }
 }
@@ -155,6 +155,7 @@ function normalize_profile(array $p) {
         $out[$f] = strtoupper($out[$f]);
     }
     if ($out['id_number'] === 'N/A') $out['id_number'] = '';
+    $out['suffix'] = rtrim(str_replace('.', '', $out['suffix']));   // "Jr." -> "JR"
     return $out;
 }
 

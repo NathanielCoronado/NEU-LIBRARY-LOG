@@ -483,7 +483,7 @@ if ($resultFlags && $resultFlags->num_rows > 0):
             </div>
             <div class="form-group" style="flex:1;">
                 <label>Suffix</label>
-                <input type="text" id="mSuffix" placeholder="JR, III...">
+                <select id="mSuffix"><option value="">NONE</option><?php render_options($SUFFIXES); ?></select>
             </div>
         </div>
         <div class="form-group">
@@ -542,7 +542,7 @@ if ($resultFlags && $resultFlags->num_rows > 0):
         </div>
         <div style="display:flex;gap:10px;">
             <div class="form-group" style="flex:2;"><label>Last Name <span style="color:red;">*</span></label><input type="text" id="uLast"></div>
-            <div class="form-group" style="flex:1;"><label>Suffix</label><input type="text" id="uSuffix"></div>
+            <div class="form-group" style="flex:1;"><label>Suffix</label><select id="uSuffix"><option value="">NONE</option><?php render_options($SUFFIXES); ?></select></div>
         </div>
         <div style="display:flex;gap:10px;">
             <div class="form-group" style="flex:1;"><label>ID Number</label><input type="text" id="uID" placeholder="XX-XXXXX-XXX"></div>
@@ -646,9 +646,9 @@ function closeModal() {
     editMode = false; editingRow = null; oldIDForUpdate = '';
     document.getElementById('modalTitle').innerText = '➕ ADD NEW VISITOR';
     document.getElementById('saveBtn').innerText    = 'SAVE VISITOR';
-    ['mFirstName','mMiddleName','mLastName','mSuffix','mID','mOtherPurpose','mContact','mSessionId']
+    ['mFirstName','mMiddleName','mLastName','mID','mOtherPurpose','mContact','mSessionId']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    ['mCategory','mPurpose','mProgram'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+    ['mCategory','mPurpose','mProgram','mSuffix'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
     const oc = document.getElementById('otherPurposeContainer');
     if (oc) oc.style.display = 'none';
 }
@@ -895,7 +895,7 @@ function editRow(btn) {
     document.getElementById('mFirstName').value  = editingRow.getAttribute('data-fname')    || '';
     document.getElementById('mMiddleName').value = editingRow.getAttribute('data-mname')    || '';
     document.getElementById('mLastName').value   = editingRow.getAttribute('data-lname')    || '';
-    document.getElementById('mSuffix').value     = editingRow.getAttribute('data-suffix')   || '';
+    setSelect('mSuffix', (editingRow.getAttribute('data-suffix') || '').replace(/\./g, ''));
     document.getElementById('mContact').value    = editingRow.getAttribute('data-contact')  || '';
     document.getElementById('mID').value         = oldIDForUpdate;
     setSelect('mCategory', editingRow.getAttribute('data-category'));
@@ -1066,7 +1066,7 @@ function editUser(btn) {
     document.getElementById('uFirst').value   = g('data-fname');
     document.getElementById('uMiddle').value  = g('data-mname');
     document.getElementById('uLast').value    = g('data-lname');
-    document.getElementById('uSuffix').value  = g('data-suffix');
+    setSelect('uSuffix', g('data-suffix').replace(/\./g, ''));
     document.getElementById('uID').value      = g('data-idnum');
     document.getElementById('uContact').value = g('data-contact');
     setSelect('uCategory', g('data-category'));

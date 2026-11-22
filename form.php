@@ -70,8 +70,8 @@ $val = [
     'mname'     => $profile['middle_name'],
     'suffix'    => $profile['suffix'],
     'course'    => $profile['course'],
-    'reason'    => canonical($profile['last_reason'] ?? '', array_keys($REASONS)),
-    'others'    => $profile['last_others'] ?? '',
+    'reason'    => '',   // reason is chosen fresh on every visit
+    'others'    => '',
 ];
 
 // Avatar fallback
@@ -553,7 +553,11 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
                         
                         <div style="width: 80px;">
                             <label>Suffix</label>
-                            <input type="text" name="suffix" placeholder="Opt." value="<?php echo e($val['suffix']); ?>">
+                            <select name="suffix">
+                                <option value="">None</option>
+                                <?php render_options($SUFFIXES, $val['suffix']);
+                                      if ($val['suffix'] !== '' && !in_array($val['suffix'], $SUFFIXES, true)) render_options([$val['suffix']], $val['suffix']); ?>
+                            </select>
                         </div>
                     </div>
 
