@@ -64,7 +64,7 @@
             width: 100%;
             height: 100%;
             z-index: 1;
-            background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=true');
+            background-image: url('neu-library.jpg');
             background-size: cover;
             background-position: center;
             filter: blur(6px);
@@ -125,6 +125,9 @@
             .header-container::before, .header-container::after { height: 20px; }
         }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
 
 <body>
@@ -132,7 +135,7 @@
         <div class="background-image"></div>
         <div class="overlay"></div>
         <div class="logo-container">
-            <img src="https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LOGO.jpg?raw=true" 
+            <img src="neu-logo.jpg" 
                  alt="NEU Logo" class="logo-image">
         </div>
     </div>

@@ -1,0 +1,12 @@
+# Private settings (passwords!) — never commit
+config.php
+
+# Composer
+vendor/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

@@ -1,6 +1,7 @@
 <?php
 // --- 1. CONFIGURATION & HEADERS ---
-require_once 'db_conn.php';
+require_once 'auth.php';
+require_admin_api();
 date_default_timezone_set('Asia/Manila');
 header('Content-Type: application/json');
 

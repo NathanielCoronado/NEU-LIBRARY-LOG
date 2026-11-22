@@ -1,41 +1,43 @@
 <?php
 /**
- * 1. INITIALIZATION & DATABASE CONNECTION
+ * FILE: reset.php
+ * PURPOSE: Lets a user choose a new password from the e-mailed reset link.
+ *          The token is checked again on submit, so the link cannot be reused
+ *          or forged for another e-mail address.
  */
-include 'db_conn.php';
+require_once 'db_conn.php';
 
-$valid_token = false;
-$email_from_url = "";
-$token_from_url = "";
+$email_from_url = trim($_GET['email'] ?? $_POST['email'] ?? '');
+$token_from_url = trim($_GET['token'] ?? $_POST['token'] ?? '');
+$valid_token    = false;
+$form_error     = '';
 
-/**
- * 2. TOKEN & EMAIL VERIFICATION
- */
-if (isset($_GET['token']) && isset($_GET['email'])) {
-    $email_from_url = mysqli_real_escape_string($conn, $_GET['email']);
-    $token_from_url = mysqli_real_escape_string($conn, $_GET['token']);
-
-    $checkToken = mysqli_query($conn, "SELECT * FROM users WHERE email = '$email_from_url' AND reset_token = '$token_from_url' AND reset_token IS NOT NULL AND token_expiry > NOW()");
-
-    if (mysqli_num_rows($checkToken) > 0) {
-        $valid_token = true;
-    }
+/* --- 1. TOKEN & EMAIL VERIFICATION --- */
+if ($email_from_url !== '' && $token_from_url !== '') {
+    $stmt = $conn->prepare("SELECT id FROM users WHERE email = ? AND reset_token = ? AND reset_token IS NOT NULL AND token_expiry > NOW() LIMIT 1");
+    $stmt->bind_param("ss", $email_from_url, $token_from_url);
+    $stmt->execute();
+    $valid_token = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
 }
 
-/**
- * 3. PASSWORD UPDATE PROCESSING
- */
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
-    $new_password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
+/* --- 2. PASSWORD UPDATE PROCESSING --- */
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['update_password']) && $valid_token) {
+    $pw = $_POST['password'] ?? '';
+    $strong = strlen($pw) >= 8 && preg_match('/[A-Z]/', $pw) && preg_match('/[a-z]/', $pw)
+           && preg_match('/[0-9]/', $pw) && preg_match('/[^A-Za-z0-9]/', $pw);
 
-    $updateQuery = "UPDATE users SET password = '$new_password', reset_token = NULL, token_expiry = NULL WHERE email = '$email'";
-
-    if (mysqli_query($conn, $updateQuery)) {
+    if (!$strong) {
+        $form_error = 'Password does not meet the requirements.';
+    } elseif ($pw !== ($_POST['confirm_password'] ?? '')) {
+        $form_error = 'Passwords do not match.';
+    } else {
+        $hash = password_hash($pw, PASSWORD_DEFAULT);
+        $up = $conn->prepare("UPDATE users SET password = ?, reset_token = NULL, token_expiry = NULL WHERE email = ? AND reset_token = ?");
+        $up->bind_param("sss", $hash, $email_from_url, $token_from_url);
+        $up->execute();
         echo "<script>alert('Password successfully updated!'); window.location='login.php';</script>";
         exit();
-    } else {
-        echo "<script>alert('Error updating password. Please try again.');</script>";
     }
 }
 ?>
@@ -59,7 +61,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
         .header-container::after { bottom: 0; background: linear-gradient(to bottom, #c62828 33.33%, #ffffff 33.33% 66.66%, #00695c 66.66%); transform: translateX(100%); }
 
         /* --- BACKGROUND EFFECTS --- */
-        .background-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=true'); background-size: cover; background-position: center; filter: blur(8px); transform: scale(1.1); }
+        .background-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background-image: url('neu-library.jpg'); background-size: cover; background-position: center; filter: blur(8px); transform: scale(1.1); }
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; background: rgba(0,0,0,0.2); }
 
         /* --- CARD & TYPOGRAPHY --- */
@@ -91,6 +93,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
         @keyframes slideInOnce { to { transform: translateX(0); } }
         @media (max-width: 480px) { .reset-card { padding: 30px 20px; width: 92%; } h2 { font-size: 20px; } .header-container::before, .header-container::after { height: 24px; } }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
 <body>
 
@@ -109,7 +114,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
             <p class="subtitle">Secure your account by creating a new password.</p>
 
             <form id="resetForm" method="POST" action="">
-                <input type="hidden" name="email" value="<?php echo $email_from_url; ?>">
+                <input type="hidden" name="email" value="<?php echo e($email_from_url); ?>">
+                <input type="hidden" name="token" value="<?php echo e($token_from_url); ?>">
+                <?php if ($form_error): ?>
+                    <p style="background:#fdecea;color:#b71c1c;padding:10px;border-radius:8px;font-size:14px;margin-bottom:15px;"><?php echo e($form_error); ?></p>
+                <?php endif; ?>
                 
                 <div class="form-group">
                     <label>New Password</label>
@@ -135,7 +144,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
                 <div class="form-group">
                     <label>Confirm Password</label>
                     <div style="position: relative;">
-                        <input type="password" id="confirmPassword" placeholder="Re-enter New Password" required>
+                        <input type="password" name="confirm_password" id="confirmPassword" placeholder="Re-enter New Password" required>
                         <span class="eye-icon" onclick="toggleVisibility('confirmPassword', this)">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="22">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
@@ -171,7 +180,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
     const special = document.getElementById("special");
     const messageBox = document.getElementById("psw-message");
 
-    /* --- PASSWORD VALIDATION --- */
+    /* --- PASSWORD VALIDATION (only when the form is shown) --- */
+    if (myInput) {
     myInput.onfocus = function() { messageBox.style.display = "block"; }
     myInput.onblur = function() { messageBox.style.display = "none"; }
 
@@ -182,6 +192,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
         val.match(/[0-9]/g) ? number.classList.replace("invalid", "valid") : number.classList.replace("valid", "invalid");
         val.length >= 8 ? length.classList.replace("invalid", "valid") : length.classList.replace("valid", "invalid");
         val.match(/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/g) ? special.classList.replace("invalid", "valid") : special.classList.replace("valid", "invalid");
+    }
     }
 
     /* --- PASSWORD VISIBILITY --- */
@@ -197,7 +208,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['update_password'])) {
     }
 
     /* --- FORM SUBMISSION --- */
-    document.getElementById('resetForm').addEventListener('submit', function(e) {
+    const resetForm = document.getElementById('resetForm');
+    if (resetForm) resetForm.addEventListener('submit', function(e) {
         const newPass = document.getElementById('newPassword').value;
         const confirmPass = document.getElementById('confirmPassword').value;
         if (newPass !== confirmPass) {

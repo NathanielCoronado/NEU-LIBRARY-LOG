@@ -1,77 +1,81 @@
 <?php
-/** --- 1. SESSION & DATABASE --- **/
-session_start();
-include 'db_conn.php';
+/**
+ * FILE: login.php
+ * PURPOSE: Email/password login (Google sign-in is handled by google_handler.php).
+ */
+require_once 'auth.php';
 
-// Set timezone to ensure correct day detection
-date_default_timezone_set('Asia/Manila');
-$current_day = date('l'); // Returns 'Sunday', 'Monday', etc.
+$current_day = date('l'); // 'Sunday', 'Monday', ...
 
-/** --- 2. AUTHENTICATION --- **/
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
-    $email = mysqli_real_escape_string($conn, trim($_POST['email']));
-    $password = $_POST['password'];
+/* --- 1. ALREADY LOGGED IN? --- */
+if ($_SERVER["REQUEST_METHOD"] !== "POST" && !empty($_SESSION['user_id'])) {
+    header("Location: " . (is_admin() ? "admin.php" : (!empty($_SESSION['active_id']) ? "out.php" : "form.php")));
+    exit();
+}
 
-    /** --- 2.1 ADMIN OVERRIDE --- **/
-    // We allow the master admin to bypass the Sunday restriction for maintenance
-    if ($email === 'neulib@login.2526' && $password === '25260323') {
-        session_unset(); 
+/* --- 2. AUTHENTICATION --- */
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['login'])) {
+    $email    = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+
+    /* 2.1 MASTER ADMIN (from config.php) — allowed on Sundays for maintenance */
+    if ($email !== '' && hash_equals((string) cfg('admin.email'), $email)
+        && hash_equals((string) cfg('admin.password'), $password)) {
         session_regenerate_id(true);
-
-        $_SESSION['user_id']    = 'ADMIN_01';
-        $_SESSION['email']      = $email;
-        $_SESSION['first_name'] = 'System';
-        $_SESSION['last_name']  = 'Admin';
-        $_SESSION['role']       = 'ADMIN'; 
-
+        $_SESSION = [
+            'user_id'    => 'ADMIN_01',
+            'email'      => $email,
+            'first_name' => 'System',
+            'last_name'  => 'Admin',
+            'role'       => 'ADMIN',
+        ];
         header("Location: admin.php");
         exit();
     }
 
-    /** --- 2.2 SUNDAY RESTRICTION --- **/
+    /* 2.2 SUNDAY RESTRICTION */
     if ($current_day === 'Sunday') {
         header("Location: login.php?status=library_closed");
         exit();
     }
 
-    /** --- 2.3 DATABASE VERIFICATION --- **/
-    $sql = "SELECT * FROM users WHERE email = '$email' LIMIT 1";
-    $result = mysqli_query($conn, $sql);
+    /* 2.3 DATABASE VERIFICATION */
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
-    if (mysqli_num_rows($result) > 0) {
-        $user = mysqli_fetch_assoc($result);
-
-        /** --- 2.4 PASSWORD & ROLE --- **/
-        if (password_verify($password, $user['password'])) {
-            $db_role = isset($user['role']) ? strtoupper(trim($user['role'])) : 'USER';
-            
-            session_unset(); 
-            session_regenerate_id(true);
-            
-            $_SESSION['user_id']    = $user['id'];
-            $_SESSION['email']      = $user['email'];
-            $_SESSION['first_name'] = $user['first_name'];
-            $_SESSION['last_name']  = $user['last_name'];
-            $_SESSION['role']       = $db_role;
-
-            /** --- 3. REDIRECTION --- **/
-            if ($db_role === 'ADMIN') {
-                header("Location: admin.php");
-            } else {
-                header("Location: form.php");
-            }
-            exit();
-            
-        } else {
-            /** --- 4. ERROR: PASSWORD --- **/
-            header("Location: login.php?status=invalid_password&email=" . urlencode($email));
-            exit();
-        }
-    } else {
-        /** --- 5. ERROR: NOT FOUND --- **/
+    if (!$user) {
         header("Location: login.php?status=not_found");
         exit();
     }
+
+    // Google-only accounts have no password yet
+    if (empty($user['password']) || !password_verify($password, $user['password'])) {
+        header("Location: login.php?status=invalid_password&email=" . urlencode($email));
+        exit();
+    }
+
+    if ((int) ($user['is_blocked'] ?? 0) === 1) {
+        header("Location: login.php?status=blocked");
+        exit();
+    }
+
+    /* 2.4 START SESSION */
+    $db_role = strtoupper(trim($user['role'] ?? 'USER')) ?: 'USER';
+    session_regenerate_id(true);
+    $_SESSION = [
+        'user_id'     => $user['id'],
+        'email'       => $user['email'],
+        'first_name'  => $user['first_name'],
+        'last_name'   => $user['last_name'],
+        'profile_pic' => $user['profile_pic'] ?? '',
+        'role'        => $db_role,
+    ];
+
+    header("Location: " . ($db_role === 'ADMIN' ? "admin.php" : "form.php"));
+    exit();
 }
 ?>
 
@@ -136,7 +140,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
             to { transform: translateX(0); } 
         }
         
-        .background-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=trueA'); background-size: cover; background-position: center; filter: blur(6px); transform: scale(1.1); }
+        .background-image { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background-image: url('neu-library.jpg'); background-size: cover; background-position: center; filter: blur(6px); transform: scale(1.1); }
         .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; background: rgba(255, 255, 255, 0.1); }
 
         /** --- CARD COMPONENTS --- **/
@@ -181,6 +185,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
         @media (max-width: 480px) { .login-card { width: 95%; padding: 25px 20px; } }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
 <body>
     <div class="header-container">
@@ -189,7 +196,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
         <div class="login-card">
             <div class="logo-container">
-                <img src="https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LOGO.jpg?raw=true" class="logo-image" alt="Logo">
+                <img src="neu-logo.jpg" class="logo-image" alt="Logo">
             </div>
 
             <h2>Welcome!</h2>
@@ -220,7 +227,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
             <div class="google-wrapper" id="googleBtnWrapper">
                 <div id="g_id_onload"
-                     data-client_id="814210630472-5tdooa2at4t3jph9djk91kb4eandpbcm.apps.googleusercontent.com"
+                     data-client_id="<?php echo e(cfg('google_client_id')); ?>"
                      data-callback="handleCredentialResponse"
                      data-auto_prompt="false">
                 </div>
@@ -278,7 +285,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
         if (verifySuccess === 'true') {
             Swal.fire({
                 title: 'Email Verified!',
-                text: 'Authentication complete. Please sign in with Google to synchronize your library profile.',
+                text: 'Your account is active. Log in with your password or sign in with Google.',
                 icon: 'success', confirmButtonColor: '#1e7d32', confirmButtonText: 'PROCEED',
                 customClass: { popup: 'neu-curved-popup', confirmButton: 'neu-curved-btn' }
             });
@@ -350,18 +357,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
     /** --- EXTERNAL AUTH HANDLERS --- **/
     async function handleCredentialResponse(response) {
-        // NEW: Client-side Sunday check for Google Login
-        const today = new Date().toLocaleDateString('en-US', { weekday: 'long' });
-        if (today === 'Sunday') {
-            Swal.fire({
-                title: 'Notice',
-                text: 'Google Sign-in is also unavailable today while the library is closed.',
-                icon: 'info', confirmButtonColor: '#c62828',
-                customClass: { popup: 'neu-curved-popup border-red' }
-            });
-            return;
-        }
-
         Swal.fire({
             title: 'Authenticating', 
             html: 'Verifying with Google...', 
@@ -381,7 +376,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['login'])) {
 
             if (data.status === 'success') {
                 sessionStorage.removeItem('should_pulse'); 
-                window.location.href = 'form.php';
+                window.location.href = data.role === 'ADMIN' ? 'admin.php' : 'form.php';
+            } else if (data.status === 'closed') {
+                Swal.fire({
+                    title: 'Library is Closed',
+                    text: 'Today is Sunday. Google Sign-in is unavailable while the library is closed.',
+                    icon: 'info', confirmButtonColor: '#c62828',
+                    customClass: { popup: 'neu-curved-popup border-red', title: 'swal2-title-red', confirmButton: 'neu-curved-btn' }
+                });
             } else if (data.status === 'blocked') {
                 Swal.fire({ 
                     title: 'Access Restricted', 

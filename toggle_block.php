@@ -1,6 +1,7 @@
 <?php
 /* --- 1. CONFIGURATION & HEADERS --- */
-include 'db_conn.php';
+require_once 'auth.php';
+require_admin_api();
 header('Content-Type: application/json');
 
 /* --- 2. REQUEST VALIDATION --- */
@@ -39,13 +40,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $insert_log = $conn->prepare("INSERT INTO library_logs 
                     (id_number, first_name, middle_name, last_name, suffix, user_type, course, email, reason, others_detail, time_in, time_out, date_visited, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'Blocked')");
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Blocked')");
                 
-                $insert_log->bind_param("ssssssssssss", 
+                $time_out = date('h:i:s A');
+                $insert_log->bind_param("sssssssssssss", 
                     $session_data['id_number'], $session_data['first_name'], $session_data['middle_name'], 
                     $session_data['last_name'], $session_data['suffix'], $session_data['user_type'], 
                     $session_data['course'], $session_data['email'], $session_data['reason'], 
-                    $session_data['others_detail'], $session_data['time_in'], $session_data['date_visited']
+                    $session_data['others_detail'], $session_data['time_in'], $time_out, $session_data['date_visited']
                 );
                 $insert_log->execute();
 

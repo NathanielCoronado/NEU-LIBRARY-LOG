@@ -23,6 +23,6 @@ if (ini_get("session.use_cookies")) {
 session_destroy();
 
 /** --- 5. REDIRECTION --- **/
-header("Location: INDEX.php"); 
+header("Location: index.php"); 
 exit();
 ?>

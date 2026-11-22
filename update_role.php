@@ -1,67 +1,65 @@
 <?php
-/* --- 1. CONFIG & HEADERS --- */
-include 'db_conn.php';
+/**
+ * FILE: update_role.php
+ * PURPOSE: Admin-only. Promote a user to ADMIN or revert to USER.
+ *          Promoted users who are inside the library are automatically timed out.
+ */
+require_once 'auth.php';
+require_admin_api();
 header('Content-Type: application/json');
 
-/* --- 2. VALIDATION & SANITIZATION --- */
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    
-    // Sanitize inputs
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $role  = strtoupper(mysqli_real_escape_string($conn, $_POST['role'])); 
+if ($_SERVER["REQUEST_METHOD"] !== "POST") {
+    echo json_encode(['status' => 'error', 'message' => 'INVALID REQUEST.']);
+    exit;
+}
 
-    // Validate role
-    if (!in_array($role, ['ADMIN', 'USER'])) {
-        echo json_encode(['status' => 'error', 'message' => 'INVALID ROLE TYPE.']);
-        exit;
-    }
+$email = trim($_POST['email'] ?? '');
+$role  = strtoupper(trim($_POST['role'] ?? ''));
 
-    // Start transaction
-    mysqli_begin_transaction($conn);
+if ($email === '' || !in_array($role, ['ADMIN', 'USER'], true)) {
+    echo json_encode(['status' => 'error', 'message' => 'INVALID ROLE OR EMAIL.']);
+    exit;
+}
+if ($email === ($_SESSION['email'] ?? '') && $role === 'USER') {
+    echo json_encode(['status' => 'error', 'message' => 'YOU CANNOT REVOKE YOUR OWN ADMIN ACCESS.']);
+    exit;
+}
 
-    try {
-        /* --- 3. CORE UPDATE: USER ROLE --- */
-        $sql_update_role = "UPDATE users SET role = '$role' WHERE email = '$email'";
-        if (!mysqli_query($conn, $sql_update_role)) throw new Exception("FAILED TO UPDATE ROLE.");
+$conn->begin_transaction();
+try {
+    /* --- 1. UPDATE ROLE --- */
+    $stmt = $conn->prepare("UPDATE users SET role = ? WHERE email = ?");
+    $stmt->bind_param("ss", $role, $email);
+    $stmt->execute();
 
-        /* --- 4. ADMIN LOGIC: AUTO-OUT --- */
-        if ($role === 'ADMIN') {
-            // Check for active sessions
-            $check_active = mysqli_query($conn, "SELECT * FROM active_sessions WHERE email = '$email'");
-            
-            if (mysqli_num_rows($check_active) > 0) {
-                $row = mysqli_fetch_assoc($check_active);
-                $time_out = date('H:i:s');
+    /* --- 2. AUTO-OUT WHEN PROMOTED --- */
+    if ($role === 'ADMIN') {
+        $find = $conn->prepare("SELECT * FROM active_sessions WHERE email = ?");
+        $find->bind_param("s", $email);
+        $find->execute();
+        $res = $find->get_result();
 
-                // Transfer session to logs
-                $insert_log = "INSERT INTO library_logs 
-                    (id_number, first_name, middle_name, last_name, suffix, user_type, course, email, reason, others_detail, time_in, time_out, date_visited) 
-                    VALUES (
-                        '{$row['id_number']}', '{$row['first_name']}', '{$row['middle_name']}', '{$row['last_name']}', 
-                        '{$row['suffix']}', '{$row['user_type']}', '{$row['course']}', '{$row['email']}', 
-                        '{$row['reason']}', '{$row['others_detail']}', '{$row['time_in']}', '$time_out', '{$row['date_visited']}'
-                    )";
-                
-                if (!mysqli_query($conn, $insert_log)) throw new Exception("TRANSFER TO LOGS FAILED.");
-
-                // Delete active session record
-                if (!mysqli_query($conn, "DELETE FROM active_sessions WHERE email = '$email'")) 
-                    throw new Exception("CLEAR SESSION FAILED.");
-            }
+        while ($row = $res->fetch_assoc()) {
+            $time_out = date('h:i:s A');
+            $ins = $conn->prepare("INSERT INTO library_logs
+                (id_number, first_name, middle_name, last_name, suffix, user_type, course, email, contact, reason, others_detail, time_in, time_out, date_visited)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $ins->bind_param("ssssssssssssss",
+                $row['id_number'], $row['first_name'], $row['middle_name'], $row['last_name'], $row['suffix'],
+                $row['user_type'], $row['course'], $row['email'], $row['contact'], $row['reason'],
+                $row['others_detail'], $row['time_in'], $time_out, $row['date_visited']);
+            $ins->execute();
         }
 
-        /* --- 5. COMMIT & RESPONSE --- */
-        mysqli_commit($conn);
-        $msg = ($role === 'ADMIN') ? "PROMOTED TO ADMIN & AUTO-OUT SUCCESS." : "ROLE UPDATED TO USER.";
-        echo json_encode(['status' => 'success', 'message' => $msg]);
-
-    } catch (Exception $e) {
-        // Rollback on failure
-        mysqli_rollback($conn);
-        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        $del = $conn->prepare("DELETE FROM active_sessions WHERE email = ?");
+        $del->bind_param("s", $email);
+        $del->execute();
     }
-} else {
-    // Handle invalid request
-    echo json_encode(['status' => 'error', 'message' => 'INVALID REQUEST.']);
+
+    $conn->commit();
+    $msg = ($role === 'ADMIN') ? "PROMOTED TO ADMIN & AUTO-OUT SUCCESS." : "ROLE UPDATED TO USER.";
+    echo json_encode(['status' => 'success', 'message' => $msg]);
+} catch (Exception $e) {
+    $conn->rollback();
+    echo json_encode(['status' => 'error', 'message' => 'FAILED TO UPDATE ROLE.']);
 }
-?>

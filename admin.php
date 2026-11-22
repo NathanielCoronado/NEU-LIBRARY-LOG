@@ -1,9 +1,7 @@
 <?php
-/** --- 1. INITIALIZATION --- **/
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-session_start();
-require_once 'db_conn.php';
+/** --- 1. INITIALIZATION & ACCESS CONTROL --- **/
+require_once 'auth.php';
+require_admin();   // only admins can open the dashboard
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -11,13 +9,25 @@ require_once 'db_conn.php';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEU Library - Admin Dashboard</title>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
     <link rel="stylesheet" href="admin.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
-<body onload="updateCharts();, initCharts();">
+<body>
 
-<div class="sidebar">
+<!-- Mobile top bar (visible on phones/tablets only) -->
+<div class="mobile-topbar">
+    <button class="hamburger" onclick="toggleSidebar()" aria-label="Open menu">
+        <span></span><span></span><span></span>
+    </button>
+    <span class="mobile-title">Library Admin</span>
+    <span class="mobile-clock" id="mclock"></span>
+</div>
+<div class="sidebar-backdrop" onclick="toggleSidebar(false)"></div>
+
+<div class="sidebar" id="sidebar">
     <div class="admin-logo"></div>
     <h2>Library Admin</h2>
     <div class="nav-links">
@@ -93,6 +103,7 @@ require_once 'db_conn.php';
                 <input type="text" class="search-bar" id="tableSearch" placeholder="SEARCH NAME OR ID..." onkeyup="searchTable()">
             </div>
 
+            <div class="table-scroll">
             <table id="visitorTable">
                 <thead>
                     <tr>
@@ -126,7 +137,8 @@ if ($res_logs)   while ($row = $res_logs->fetch_assoc())   { $row['current_statu
 $latest_profile = [];
 foreach ($temp_all as $r) {
     $id_num = $r['id_number'];
-    $current_dt = $r['date_visited'] . ' ' . $r['time_in'];
+    if ($id_num === '' || strtoupper($id_num) === 'N/A') continue; // walk-ins without ID are separate people
+    $current_dt = $r['date_visited'] . ' ' . date('H:i:s', strtotime($r['time_in'] ?? '00:00'));
     
     if (!isset($latest_profile[$id_num]) || $current_dt > $latest_profile[$id_num]['dt']) {
         $latest_profile[$id_num] = [
@@ -145,6 +157,7 @@ foreach ($temp_all as $r) {
 // --- STEP 3: APPLY SYNC & MERGE ---
 foreach ($temp_all as $r) {
     $id_num = $r['id_number'];
+    if (!isset($latest_profile[$id_num])) { $rows_all[] = $r; continue; }
     // Dito natin "isysync" ang record sa latest profile na nahanap natin
     $r['first_name']  = $latest_profile[$id_num]['fname'];
     $r['middle_name'] = $latest_profile[$id_num]['mname'];
@@ -159,7 +172,10 @@ foreach ($temp_all as $r) {
 
 // --- STEP 4: SORTING ---
 usort($rows_all, function($a, $b) {
-    return strcmp($b['date_visited'] . ' ' . $b['time_in'], $a['date_visited'] . ' ' . $a['time_in']);
+    // Newest first. strtotime() understands both "09:15:02 PM" and "2025-01-01 21:15:02".
+    $ta = strtotime($a['date_visited'] . ' ' . date('H:i:s', strtotime($a['time_in'] ?? '00:00')));
+    $tb = strtotime($b['date_visited'] . ' ' . date('H:i:s', strtotime($b['time_in'] ?? '00:00')));
+    return $tb <=> $ta;
 });
 /** --- RENDER ROWS --- **/
 if (!empty($rows_all)):
@@ -190,6 +206,7 @@ if (!empty($rows_all)):
               . '</span>';
 ?>
     <tr data-id="<?php echo (int)$row['id']; ?>"
+        data-source="<?php echo $isInside ? 'active' : 'log'; ?>"
         data-fname="<?php echo htmlspecialchars($row['first_name']   ?? ''); ?>"
         data-mname="<?php echo htmlspecialchars($row['middle_name']  ?? ''); ?>"
         data-lname="<?php echo htmlspecialchars($row['last_name']    ?? ''); ?>"
@@ -253,6 +270,7 @@ if (!empty($rows_all)):
 <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -264,6 +282,7 @@ if (!empty($rows_all)):
                 <input type="text" class="search-bar" id="userSearch" placeholder="SEARCH USERS..."
                     style="margin-left:0;" onkeyup="searchUsers()">
             </div>
+            <div class="table-scroll">
             <table id="userTable">
                 <thead>
                     <tr>
@@ -357,7 +376,7 @@ if ($resUser && $resUser->num_rows > 0):
                     <td>
                         <div class="action-buttons" style="display:flex;gap:5px;">
                             <button class="btn-action btn-reset"
-                                onclick="resetPassword('<?php echo htmlspecialchars($urow['final_id']); ?>', '<?php echo htmlspecialchars($rawEmail); ?>')">
+                                onclick="resetPassword(this, '<?php echo htmlspecialchars($rawEmail, ENT_QUOTES); ?>')">
                                 Reset
                             </button>
                             <button class="btn-action btn-block" onclick="toggleBlock(this)"
@@ -366,13 +385,13 @@ if ($resUser && $resUser->num_rows > 0):
                             </button>
                             <?php if ($currentRole === 'ADMIN'): ?>
                                 <button class="btn-action"
-                                    onclick="changeRole('<?php echo htmlspecialchars($rawEmail); ?>', 'USER')"
+                                    onclick="changeRole('<?php echo htmlspecialchars($rawEmail, ENT_QUOTES); ?>', 'USER')"
                                     style="background:#34495e;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:bold;">
                                     REVOKE ADMIN
                                 </button>
                             <?php else: ?>
                                 <button class="btn-action"
-                                    onclick="changeRole('<?php echo htmlspecialchars($rawEmail); ?>', 'ADMIN')"
+                                    onclick="changeRole('<?php echo htmlspecialchars($rawEmail, ENT_QUOTES); ?>', 'ADMIN')"
                                     style="background:#9b59b6;color:white;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:bold;">
                                     MAKE ADMIN
                                 </button>
@@ -386,6 +405,7 @@ if ($resUser && $resUser->num_rows > 0):
 <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -400,6 +420,7 @@ if ($resUser && $resUser->num_rows > 0):
             <p style="font-size:0.8rem;color:#666;margin-bottom:20px;">
                 ALL FLAGGED LOGS WILL APPEAR HERE FOR REVIEW AND AUDIT PURPOSES.
             </p>
+            <div class="table-scroll">
             <table id="flagTable">
                 <thead>
                     <tr>
@@ -444,6 +465,7 @@ if ($resultFlags && $resultFlags->num_rows > 0):
 <?php endif; ?>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -570,6 +592,8 @@ function updateLiveInfo() {
     const c = document.getElementById('clock');
     const d = document.getElementById('date');
     if (c) c.innerText = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:true }).toUpperCase();
+    const mc = document.getElementById('mclock');
+    if (mc) mc.innerText = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:true }).toUpperCase();
     if (d) d.innerText = now.toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'short', day:'2-digit' }).toUpperCase();
 }
 
@@ -588,6 +612,13 @@ function showSection(id, el) {
         if (lnk) lnk.classList.add('active');
     }
     localStorage.setItem('lastSection', id);
+    toggleSidebar(false);
+}
+
+/** Mobile drawer menu */
+function toggleSidebar(force) {
+    const open = typeof force === 'boolean' ? force : !document.body.classList.contains('sidebar-open');
+    document.body.classList.toggle('sidebar-open', open);
 }
 
 /** ============================================================
@@ -645,7 +676,7 @@ function initCharts() {
         data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
         options: {
             maintainAspectRatio: false, cutout: '70%',
-            plugins: { legend: { display: true, position: 'right',
+            plugins: { legend: { display: true, position: window.innerWidth < 600 ? 'bottom' : 'right',
                 labels: { boxWidth: 10, padding: 8, font: { size: 9, weight: '600' } } } }
         }
     });
@@ -812,6 +843,7 @@ async function saveVisitor() {
         url = 'update_process.php';
         fd.append('old_id_number', oldIDForUpdate);
         fd.append('session_id', document.getElementById('mSessionId')?.value || editingRow.getAttribute('data-id'));
+        fd.append('source', editingRow.getAttribute('data-source') || '');
     }
 
     fetch(url, { method: 'POST', body: fd })
@@ -877,7 +909,7 @@ function deleteRow(btn) {
     const name = row.querySelector('.name-cell')?.innerText || 'THIS RECORD';
     if (!id) { alert('ERROR: ID NOT FOUND.'); return; }
     if (!confirm(`DELETE LOG FOR ${name}?`)) return;
-    const fd = new FormData(); fd.append('id', id);
+    const fd = new FormData(); fd.append('id', id); fd.append('source', row.getAttribute('data-source') || '');
     fetch('delete_visitor.php', { method:'POST', body:fd })
         .then(r => r.json())
         .then(d => {
@@ -975,10 +1007,10 @@ function deleteUser(btn) {
         .catch(e => { console.error(e); alert('CONNECTION ERROR.'); });
 }
 
-function resetPassword(idNum, email) {
+function resetPassword(btn, email) {
     if (!email) { alert('NO VALID EMAIL.'); return; }
-    if (!confirm(`SEND RESET LINK TO ${email}? EXPIRES IN 2 MINUTES.`)) return;
-    const btn = event.target; btn.innerText = 'Sending...'; btn.disabled = true;
+    if (!confirm(`SEND RESET LINK TO ${email}?`)) return;
+    btn.innerText = 'Sending...'; btn.disabled = true;
     const fd = new FormData(); fd.append('email', email);
     fetch('generate_reset_link.php', { method:'POST', body:fd })
         .then(r => r.json())

@@ -1,106 +1,21 @@
 <?php
 /**
- * 1. INITIALIZATION & DEPENDENCIES
+ * FILE: forgot.php
+ * PURPOSE: User requests a password reset link by e-mail.
  */
 session_start();
-date_default_timezone_set('Asia/Manila');
+require_once 'mailer.php';
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
+$flash = null; // ['type' => 'success'|'error', 'text' => '...']
 
-require 'PHPMailer/src/Exception.php';
-require 'PHPMailer/src/PHPMailer.php';
-require 'PHPMailer/src/SMTP.php';
+if ($_SERVER["REQUEST_METHOD"] === "POST" && isset($_POST['forgot_password'])) {
+    $email = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
 
-include 'db_conn.php';
-
-/**
- * 2. POST REQUEST HANDLING
- */
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
-    // Sanitize input
-    $email = filter_var($_POST['email'], FILTER_SANITIZE_EMAIL);
-    
-    // Check if user exists
-    $stmt = $conn->prepare("SELECT first_name FROM users WHERE email = ? LIMIT 1");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    if ($result->num_rows > 0) {
-        $user = $result->fetch_assoc();
-        $fname = $user['first_name'];
-
-        // Generate token and 2-minute expiry
-        $token = bin2hex(random_bytes(32));
-        $expiry = date("Y-m-d H:i:s", strtotime("+2 minutes"));
-
-        // Update database with reset token
-        $updateStmt = $conn->prepare("UPDATE users SET reset_token = ?, token_expiry = ? WHERE email = ?");
-        $updateStmt->bind_param("sss", $token, $expiry, $email);
-
-        if ($updateStmt->execute()) {
-            $mail = new PHPMailer(true);
-            try {
-                // SMTP Configuration
-                $mail->isSMTP();
-                $mail->Host       = 'smtp.gmail.com';
-                $mail->SMTPAuth   = true;
-                $mail->Username   = 'nathaniel.coronado@neu.edu.ph'; 
-                $mail->Password   = 'qfbe nosw udgp zofg'; 
-                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                $mail->Port       = 587;
-
-                // Recipients
-                $mail->setFrom('noreply@neu.edu.ph', 'NEU Library');
-                $mail->addAddress($email, $fname);
-
-                // Email Content
-                $mail->isHTML(true);
-                $mail->Subject = 'Security Notice: Password Reset Request';
-                $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
-				$host = $_SERVER['HTTP_HOST'];
-				$currentDir = str_replace('\\', '/', dirname($_SERVER['REQUEST_URI']));
-				$reset_link = $protocol . "://" . $host . rtrim($currentDir, '/') . "/reset.php?token=$token&email=" . urlencode($email);
-
-                $mail->Body = "
-                <div style='background-color: #f4f7f6; padding: 40px 10px; font-family: \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;'>
-                    <div style='max-width: 550px; background: #ffffff; margin: auto; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid #e1e1e1;'>
-                        <div style='background: linear-gradient(135deg, #4b0000 0%, #c62828 50%, #ff5722 100%); padding: 35px 20px; text-align: center;'>
-                            <h1 style='color: white; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700;'>NEU Library Security</h1>
-                        </div>
-                        <div style='padding: 40px; text-align: left; color: #2d3436;'>
-                            <h2 style='color: #c62828; margin-top: 0; font-size: 20px;'>Hello, $fname!</h2>
-                            <p style='font-size: 16px; line-height: 1.6; color: #4a4a4a;'>We received a request to reset your account password. To maintain the security of your library account, please click the button below:</p>
-                            <div style='text-align: center; margin: 40px 0;'>
-                                <a href='$reset_link' style='background: linear-gradient(135deg, #c62828 0%, #ff5722 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block; box-shadow: 0 4px 12px rgba(198, 40, 40, 0.25);'>RESET PASSWORD</a>
-                            </div>
-                            <div style='background-color: #fff8f6; border-left: 4px solid #ff5722; padding: 15px; margin-bottom: 25px; border-radius: 4px;'>
-                                <p style='margin: 0; font-size: 14px; color: #b71c1c;'>
-                                    <strong>Security Alert:</strong> This secure link is only valid for <span style='color: #ff5722; font-weight: bold;'>2 minutes</span>.
-                                </p>
-                            </div>
-                            <p style='font-size: 13px; color: #7f8c8d; line-height: 1.5;'>If you did not request this, you can safely ignore this email. Your account remains secure.</p>
-                            <hr style='border: none; border-top: 1px solid #eee; margin: 30px 0;'>
-                            <p style='font-size: 11px; color: #95a5a5; text-align: center;'>
-                                &copy; " . date("Y") . " New Era University Library System
-                            </p>
-                        </div>
-                    </div>
-                </div>";
-
-                // Send email and notify user
-                $mail->send();
-                echo "<script>alert('Success! A password reset link has been dispatched to your email. (Valid for 2 mins)'); window.location.href='login.php';</script>";
-            
-            } catch (Exception $e) {
-                // Handle PHPMailer errors
-                echo "<script>alert('Mailer Error: {$mail->ErrorInfo}');</script>";
-            }
-        }
+    if (!$email) {
+        $flash = ['type' => 'error', 'text' => 'Please enter a valid email address.'];
     } else {
-        // Handle unregistered email
-        echo "<script>alert('The provided email address is not registered in our system.'); window.location.href='forgot.php';</script>";
+        $result = send_password_reset($email);
+        $flash  = ['type' => $result['status'], 'text' => $result['message']];
     }
 }
 ?>
@@ -170,7 +85,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
             width: 100%; 
             height: 100%; 
             z-index: 1;
-            background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=true');
+            background-image: url('neu-library.jpg');
             background-size: cover; 
             background-position: center;
             filter: blur(8px); 
@@ -268,8 +183,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
             box-shadow: 0 5px 15px rgba(198, 40, 40, 0.3);
         }
 
-        .back-to-login { 
-            margin-top: 25px; 
+        .flash { padding: 12px 14px; border-radius: 10px; font-size: 14px; margin-bottom: 18px; text-align: left; line-height: 1.4; }
+        .flash-success { background: #e8f5e9; color: #1e7d32; border-left: 4px solid #1e7d32; }
+        .flash-error { background: #fdecea; color: #b71c1c; border-left: 4px solid #c62828; }
+
+        .back-to-login {
+            margin-top: 25px;
             font-size: 14px; 
         }
 
@@ -300,6 +219,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
             input, .btn-send { padding: 12px; font-size: 14px; }
         }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
 <body>
 
@@ -317,7 +239,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['forgot_password'])) {
             <h2>Forgot Password?</h2>
             <p class="subtitle">Enter your registered or institutional email address to receive a secure reset link.</p>
 
-            <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" onsubmit="showLoading(this)">
+            <?php if ($flash): ?>
+                <div class="flash flash-<?php echo e($flash['type']); ?>"><?php echo e($flash['text']); ?></div>
+            <?php endif; ?>
+
+            <form method="POST" action="" onsubmit="showLoading(this)">
                 <div class="form-group">
                     <input type="email" name="email" id="userEmail" placeholder="e.g. name@neu.edu.ph" required>
                 </div>

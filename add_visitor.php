@@ -1,7 +1,8 @@
 <?php
 /** --- 1. CONFIGURATION & HEADERS --- **/
 header('Content-Type: application/json');
-include 'db_conn.php';
+require_once 'auth.php';
+require_admin_api();
 date_default_timezone_set('Asia/Manila');
 
 /** --- 2. REQUEST HANDLING --- **/
@@ -48,32 +49,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $checkActive->close();
         }
 
-        /** --- 3.2 MASTERLIST UPSERT --- **/
-        $sqlMaster = "INSERT INTO visitor_masterlist 
-                      (id_number, first_name, middle_name, last_name, suffix, contact, user_type, course) 
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
-                      ON DUPLICATE KEY UPDATE 
-                      first_name=VALUES(first_name), 
-                      middle_name=VALUES(middle_name), 
-                      last_name=VALUES(last_name), 
-                      suffix=VALUES(suffix), 
-                      contact=VALUES(contact), 
-                      user_type=VALUES(user_type), 
-                      course=VALUES(course)";
+        /** --- 3.2 MASTERLIST UPSERT (skipped for walk-ins without an ID) --- **/
+        if ($id_num !== 'N/A') {
+            $sqlMaster = "INSERT INTO visitor_masterlist 
+                          (id_number, first_name, middle_name, last_name, suffix, contact, user_type, course) 
+                          VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
+                          ON DUPLICATE KEY UPDATE 
+                          first_name=VALUES(first_name), 
+                          middle_name=VALUES(middle_name), 
+                          last_name=VALUES(last_name), 
+                          suffix=VALUES(suffix), 
+                          contact=VALUES(contact), 
+                          user_type=VALUES(user_type), 
+                          course=VALUES(course)";
         
-        $stmtMaster = $conn->prepare($sqlMaster);
-        $stmtMaster->bind_param("ssssssss", $id_num, $f_name, $m_name, $l_name, $suffix, $contact, $u_type, $course);
-        $stmtMaster->execute();
-        $stmtMaster->close();
+            $stmtMaster = $conn->prepare($sqlMaster);
+            $stmtMaster->bind_param("ssssssss", $id_num, $f_name, $m_name, $l_name, $suffix, $contact, $u_type, $course);
+            $stmtMaster->execute();
+            $stmtMaster->close();
+        }
 
         /** --- 3.3 SESSION RECORDING --- **/
         $sqlActive = "INSERT INTO active_sessions 
                       (id_number, first_name, middle_name, last_name, suffix, user_type, course, reason, others_detail, contact, date_visited, time_in) 
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         $stmtActive = $conn->prepare($sqlActive);
-        $stmtActive->bind_param("sssssssssss", 
-            $id_num, $f_name, $m_name, $l_name, $suffix, $u_type, $course, $reason, $others_detail, $contact, $date_visited
+        $time_in = date('h:i:s A'); // same text format as the visitor form
+        $stmtActive->bind_param("ssssssssssss", 
+            $id_num, $f_name, $m_name, $l_name, $suffix, $u_type, $course, $reason, $others_detail, $contact, $date_visited, $time_in
         );
         
         /** --- 4. EXECUTION & RESPONSE --- **/
@@ -86,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtActive->close();
 
     } catch (Exception $e) {
-        if ($conn->in_transaction) { $conn->rollback(); }
+        $conn->rollback();
         echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
     }
 }

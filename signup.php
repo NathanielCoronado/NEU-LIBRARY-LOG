@@ -1,171 +1,85 @@
 <?php
 /**
- * DEPENDENCIES & CONFIGURATION
+ * FILE: signup.php
+ * PURPOSE: Manual registration. Sends an activation e-mail; the account is only
+ *          created after the user clicks the (signed, 24-hour) link in verify.php.
  */
-include 'db_conn.php';
+session_start();
+require_once 'mailer.php';
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
+function signup_alert($msg, $redirect = null) {
+    $js = json_encode($msg);
+    $go = $redirect ? "window.location.href=" . json_encode($redirect) . ";" : "window.history.back();";
+    echo "<script>alert($js); $go</script>";
+    exit();
+}
 
-require 'PHPMailer/src/Exception.php';
-require 'PHPMailer/src/PHPMailer.php';
-require 'PHPMailer/src/SMTP.php';
-
-/**
- * SIGNUP FORM PROCESSING
- */
 if (isset($_POST['signup'])) {
 
-    // Validate privacy agreement
+    /* --- 1. VALIDATION --- */
     if (!isset($_POST['privacy'])) {
-        echo "<script>
-                alert('You must agree to the Data Privacy Policy to register.');
-                window.history.back();
-              </script>";
-        exit();
+        signup_alert('You must agree to the Data Privacy Policy to register.');
     }
 
-    // Sanitize and hash inputs
-    $first_name = mysqli_real_escape_string($conn, $_POST['first_name']);
-    $last_name  = mysqli_real_escape_string($conn, $_POST['last_name']);
-    $email      = mysqli_real_escape_string($conn, $_POST['email']);
-    $password   = password_hash($_POST['password'], PASSWORD_DEFAULT);
+    $first_name = trim($_POST['first_name'] ?? '');
+    $last_name  = trim($_POST['last_name'] ?? '');
+    $email      = filter_var(trim($_POST['email'] ?? ''), FILTER_VALIDATE_EMAIL);
+    $pw         = $_POST['password'] ?? '';
 
-    // Check for existing email
-    $checkEmail = "SELECT id FROM users WHERE email='$email' LIMIT 1";
-    $result = $conn->query($checkEmail);
+    if ($first_name === '' || $last_name === '' || !$email) {
+        signup_alert('Please complete your name and a valid email address.');
+    }
+    if (strlen($pw) < 8 || !preg_match('/[A-Z]/', $pw) || !preg_match('/[a-z]/', $pw)
+        || !preg_match('/[0-9]/', $pw) || !preg_match('/[^A-Za-z0-9]/', $pw)) {
+        signup_alert('Password does not meet the requirements.');
+    }
 
-    if ($result->num_rows > 0) {
-        echo "<script>
-                alert('This email address is already registered.');
-                window.location.href='login.php';
-              </script>";
-        exit();
-    } 
+    /* --- 2. DUPLICATE CHECK --- */
+    $check = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
+    $check->bind_param("s", $email);
+    $check->execute();
+    if ($check->get_result()->num_rows > 0) {
+        signup_alert('This email address is already registered.', 'login.php');
+    }
+    $check->close();
 
-    /**
-     * AVATAR & TOKEN GENERATION
-     */
-    // Generate profile picture URL
-    $colors = ['1e7d32', '2e5a88', 'a02c2c', '6a1b9a', 'ef6c00', '00838f', '4527a0'];
-    $random_bg = $colors[array_rand($colors)];
-    $email_hash = md5(strtolower(trim($email)));
+    /* --- 3. AVATAR + SIGNED VERIFICATION TOKEN --- */
+    $colors       = ['1e7d32', '2e5a88', 'a02c2c', '6a1b9a', 'ef6c00', '00838f', '4527a0'];
+    $initials_url = "https://ui-avatars.com/api/?name=" . urlencode("$first_name $last_name")
+                  . "&background=" . $colors[array_rand($colors)] . "&color=fff&size=512&bold=true";
+    $image        = "https://www.gravatar.com/avatar/" . md5(strtolower($email)) . "?s=512&d=" . urlencode($initials_url);
 
-    $initials_url = "https://ui-avatars.com/api/?name=" . urlencode($first_name . " " . $last_name) . "&background=$random_bg&color=fff&size=512&bold=true";
-    $image_address = "https://www.gravatar.com/avatar/$email_hash?s=512&d=" . urlencode($initials_url);
-
-    // Create encoded verification token
-    $timestamp = time();
-    $userData = base64_encode(json_encode([
+    $token = make_signed_token([
         'fn'   => $first_name,
         'ln'   => $last_name,
         'em'   => $email,
-        'pw'   => $password,
-        'pic'  => $image_address,
-        'time' => $timestamp
-    ]));
+        'pw'   => password_hash($pw, PASSWORD_DEFAULT),
+        'pic'  => $image,
+        'time' => time(),
+    ]);
+    $verifyLink = app_url() . "/verify.php?token=" . urlencode($token);
 
-    // Construct verification link
-    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? "https" : "http";
-    $host = $_SERVER['HTTP_HOST'];
-    $currentDir = str_replace('\\', '/', dirname($_SERVER['REQUEST_URI']));
-    $verifyLink = $protocol . "://" . $host . rtrim($currentDir, '/') . "/verify.php?token=$userData";
-
-    /**
-     * EMAIL DISPATCH (PHPMailer)
-     */
-    $mail = new PHPMailer(true);
+    /* --- 4. SEND ACTIVATION E-MAIL --- */
+    $fn   = e($first_name);
+    $body = "<h2 style='margin-top:0;color:#263238;'>Greetings, $fn!</h2>
+             <p>To finalize your access to the <strong>NEU Library Visitor Log</strong>, please verify your e-mail address.</p>"
+          . email_button($verifyLink, 'VERIFY MY PROFILE', '#00796b') .
+            "<p style='font-size:13px;color:#90a4ae;'>This link expires in 24 hours. If you did not request this registration, you can ignore this email.</p>";
 
     try {
-        // Server settings
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = 'nathaniel.coronado@neu.edu.ph';
-        $mail->Password   = 'jonc tuaj dpwy unpw'; 
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
-
-        // SSL fix for local development
-        $mail->SMTPOptions = [
-            'ssl' => [
-                'verify_peer'       => false,
-                'verify_peer_name'  => false,
-                'allow_self_signed' => true
-            ]
-        ];
-
-        // Recipients and headers
-        $mail->setFrom('noreply@neu.edu.ph', 'NEU Library');
+        $mail = make_mailer();
         $mail->addAddress($email, $first_name);
-        $mail->isHTML(true);
         $mail->Subject = 'Account Activation - NEU Library';
-
-        // HTML Content
-        $mail->Body = "
-        <html>
-        <body style=\"margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f7; color: #333;\">
-            <div style='padding: 40px 20px;'>
-                <div style='max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #e1e8e8;'>
-                    
-                    <div style='background: linear-gradient(135deg, #004d40 0%, #00796b 100%); padding: 50px 20px; text-align: center;'>
-                        <img src='https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LOGO.jpg?raw=true' 
-                             alt='NEU Logo' 
-                             style='width: 90px; height: 90px; border-radius: 50%; border: 4px solid rgba(255,255,255,0.2); background: #ffffff; object-fit: cover;'>
-                        <h1 style='color: #ffffff; margin: 15px 0 0 0; font-size: 24px; font-weight: 700; letter-spacing: 1.5px;'>NEU LIBRARY</h1>
-                        <p style='color: #b2dfdb; margin: 5px 0 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: 3px;'>Visitor Attendance System</p>
-                    </div>
-
-                    <div style='padding: 45px 35px; text-align: center;'>
-                        <div style='display: inline-block; padding: 7px 18px; background-color: #e0f2f1; color: #00796b; border-radius: 50px; font-size: 11px; font-weight: 800; margin-bottom: 25px; text-transform: uppercase;'>
-                            Account Verification
-                        </div>
-                        
-                        <h2 style='color: #263238; margin: 0 0 15px 0; font-size: 26px;'>Greetings, $first_name!</h2>
-                        
-                        <p style='color: #546e7a; line-height: 1.8; margin: 0 0 35px 0; font-size: 16px;'>
-                            To finalize your access to the <strong>NEU Library Visitor Log</strong>, we need to verify your identity. 
-                            Please click the button below to secure your account.
-                        </p>
-                        
-                        <a href='$verifyLink' style='background: linear-gradient(to right, #00796b, #004d40); color: #ffffff; padding: 20px 45px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 16px; display: inline-block;'>
-                            VERIFY MY PROFILE
-                        </a>
-                        
-                        <p style='color: #90a4ae; font-size: 13px; margin-top: 40px; font-style: italic;'>
-                            If you did not request this registration, you can safely ignore this email.
-                        </p>
-                    </div>
-
-                    <div style='padding: 35px; text-align: center; background-color: #fafafa; border-top: 1px solid #f0f0f0;'>
-                        <p style='color: #78909c; font-size: 12px; margin: 0;'>
-                            <strong style='color: #455a64;'>&copy; " . date("Y") . " New Era University Library System</strong><br>
-                            #9 Central Avenue, New Era, Quezon City, 1107 Metro Manila, Philippines<br><br>
-                            <span style='color: #455a64; font-size: 10px; text-transform: uppercase;'>This is an automated message. Please do not reply.</span>
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </body>
-        </html>";
-
+        $mail->Body    = email_layout('linear-gradient(135deg,#004d40,#00796b)', 'NEU Library', $body);
+        $mail->AltBody = "Verify your NEU Library account: $verifyLink";
         $mail->send();
-
-        echo "<script>
-                alert('Activation link sent to $email. Please check your inbox.');
-                window.location.href='login.php';
-              </script>";
-        exit();
-
-    } catch (Exception $e) {
-        echo "<script>
-                alert('Mail Error: " . addslashes($mail->ErrorInfo) . "');
-                window.history.back();
-              </script>";
-        exit();
+        signup_alert("Activation link sent to $email. Please check your inbox (and spam folder).", 'login.php');
+    } catch (Exception $ex) {
+        signup_alert('Mail Error: ' . $ex->getMessage());
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -243,7 +157,7 @@ if (isset($_POST['signup'])) {
             width: 100%; 
             height: 100%; 
             z-index: 1; 
-            background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=true');
+            background-image: url('neu-library.jpg');
             background-size: cover; 
             background-position: center; 
             filter: blur(6px); 
@@ -521,6 +435,9 @@ if (isset($_POST['signup'])) {
             .privacy-row { font-size: 12px; }
         }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
 <body>
     <div class="header-container">
@@ -530,7 +447,7 @@ if (isset($_POST['signup'])) {
         <div class="signup-card">
             
             <div class="logo-container">
-                <img src="https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LOGO.jpg?raw=true" 
+                <img src="neu-logo.jpg" 
                      alt="NEU Logo" 
                      class="logo-image">
             </div>
@@ -587,7 +504,7 @@ if (isset($_POST['signup'])) {
 
             <div class="google-wrapper">
                 <div id="g_id_onload"
-                     data-client_id="814210630472-5tdooa2at4t3jph9djk91kb4eandpbcm.apps.googleusercontent.com"
+                     data-client_id="<?php echo e(cfg('google_client_id')); ?>"
                      data-callback="handleCredentialResponse">
                 </div>
                 <div class="g_id_signin" data-type="standard"></div>

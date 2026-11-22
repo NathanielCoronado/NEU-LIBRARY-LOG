@@ -1,0 +1,105 @@
+/* =========================================================
+   responsive.css
+   Shared mobile/tablet fixes for every public page.
+   Loaded LAST in <head> so it can override page styles.
+   ========================================================= */
+
+/* --- 1. Let pages scroll instead of cutting content off --- */
+html, body {
+    height: auto !important;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-text-size-adjust: 100%;
+}
+body { min-height: 100vh; min-height: 100dvh; }
+
+/* Full-screen backgrounds grow with their content */
+.header-container {
+    height: auto !important;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 56px 16px;
+}
+
+/* Cards never touch the screen edges */
+.login-card, .signup-card, .forgot-card, .reset-card {
+    max-height: none !important;
+    margin: 0 auto;
+}
+
+/* Bigger tap targets + no iOS zoom on focus (inputs must be >= 16px) */
+@media (max-width: 768px) {
+    input, select, textarea { font-size: 16px !important; }
+    button, .btn-login, .btn-signup, .btn-send, .btn-update, .btn-submit { min-height: 46px; }
+}
+
+/* Google button shouldn't overflow narrow cards */
+.google-wrapper, .g_id_signin { max-width: 100%; overflow: hidden; }
+
+/* --- 2. Small phones --- */
+@media (max-width: 400px) {
+    .header-container { padding: 40px 10px; }
+    .login-card, .signup-card, .forgot-card, .reset-card {
+        width: 100% !important;
+        padding: 22px 16px !important;
+        border-radius: 18px !important;
+    }
+}
+
+/* --- 3. Landscape phones (short screens) --- */
+@media (max-height: 500px) and (orientation: landscape) {
+    .header-container { align-items: flex-start !important; }
+}
+
+/* --- 4. Respect "reduce motion" accessibility setting --- */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* --- 5. Keyboard focus visible for accessibility --- */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid #fbc02d;
+    outline-offset: 2px;
+}
+
+/* =========================================================
+   VISITOR "OUT" SCREEN (out.php)
+   ========================================================= */
+@media (max-width: 900px) {
+    body.out-page { height: auto !important; min-height: 100dvh; width: 100% !important; }
+    body.out-page .main-wrapper {
+        display: flex !important;
+        flex-direction: column;
+        align-items: center;
+        justify-content: space-between;
+        gap: 28px;
+        min-height: 100dvh;
+        padding: 60px 20px 70px !important;
+        text-align: center;
+    }
+    body.out-page .logo-box, body.out-page .clock-box, body.out-page .btn-box { align-self: center !important; justify-self: center !important; }
+    body.out-page .logo { width: 120px !important; height: 120px !important; }
+    body.out-page .welcome-text { font-size: clamp(2.2rem, 11vw, 3.6rem) !important; line-height: 0.95 !important; }
+    body.out-page .welcome-content p { letter-spacing: 6px !important; }
+    body.out-page .live-clock { font-size: 1.7rem !important; }
+    body.out-page .btn-box { width: 100%; max-width: 360px; }
+    body.out-page .out-button { width: 100%; padding: 16px !important; }
+    body.out-page .modal-card { width: 92% !important; }
+    body.out-page .modal-body { padding: 10px 20px 20px !important; font-size: 1rem !important; }
+    body.out-page .modal-footer { padding: 0 20px 24px !important; }
+}
+
+/* =========================================================
+   VISITOR FORM (form.php)
+   ========================================================= */
+@media (max-width: 1024px) {
+    body.form-page .header h1 { font-size: clamp(1.15rem, 5.5vw, 1.6rem) !important; }
+    body.form-page .btn-logout { bottom: 16px !important; right: 16px !important; }
+    body.form-page .main-wrapper { padding-bottom: 90px !important; }
+    body.form-page .avatar-container { width: 160px !important; height: 160px !important; }
+}

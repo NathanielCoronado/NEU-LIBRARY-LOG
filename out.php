@@ -1,13 +1,9 @@
 <?php
-/** --- 1. CORE SETUP --- **/
-session_start();
-date_default_timezone_set('Asia/Manila');
-
-if (file_exists('db_conn.php')) {
-    require_once 'db_conn.php';
-} else {
-    die("Error: Connection file 'db_conn.php' not found.");
-}
+/**
+ * FILE: out.php
+ * PURPOSE: "You are inside the library" screen with the OUT (time-out) button.
+ */
+require_once 'auth.php';
 
 /** --- 2. ACCESS CONTROL --- **/
 if (!isset($_SESSION['active_id']) || !isset($_SESSION['email'])) {
@@ -93,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         /** --- CSS: LAYOUT --- **/
         .main-wrapper { flex-grow: 1; display: grid; grid-template-columns: 1fr 2fr 1fr; grid-template-rows: 1fr 1fr; align-items: center; padding: 60px 80px; z-index: 10; }
-        .logo { width: 180px; height: 180px; background: white url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LOGO.jpg?raw=true') no-repeat center; background-size: 100%; border-radius: 100%; border: 6px solid #fff; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .logo { width: 180px; height: 180px; background: white url('neu-logo.jpg') no-repeat center; background-size: 100%; border-radius: 100%; border: 6px solid #fff; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
         .out-button { background-color: #c62828; color: white; padding: 12px 40px; border: none; font-weight: bold; font-size: 1.5rem; cursor: pointer; border-radius: 9px; transition: 0.3s; text-transform: uppercase; box-shadow: 0 8px 25px rgba(0,0,0,0.5); }
         .out-button:hover { background-color: #ffffff; color: #c62828; transform: translateY(-3px); }
         .welcome-content { grid-column: 2; grid-row: 1 / span 2; text-align: center; }
@@ -117,8 +113,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .modal-card.success-mode { border-top-color: #1e7d32; }
         .modal-card.success-mode h2 { color: #1e7d32; }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="out-page">
 
     <div class="main-wrapper">
         <div class="logo-box"><div class="logo"></div></div>
@@ -189,8 +188,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         modalCard.classList.remove('success-mode');
         modalCard.style.borderTop = "10px solid #e74c3c"; 
         modalTitle.innerHTML = "<span style='color: #e74c3c;'>🚩 FLAG SYSTEM UPDATE</span>";
+        const esc = (t) => String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
         const badge = queueLength > 1 ? `<p style="color: #e74c3c; font-weight: bold; font-size: 0.8rem;">PENDING: ${queueLength}</p>` : "";
-        modalMessage.innerHTML = `<div style="text-align: left; background: #fdf2f2; padding: 15px; border-radius: 8px; border-left: 5px solid #e74c3c;"><p><strong>NAME:</strong> ${info.name}</p><p><strong>REASON:</strong> <span style="color: #c0392b;">${info.reason}</span></p><p style="font-size: 0.85rem; color: #7f8c8d;"><strong>TIME:</strong> ${info.time}</p></div><p style="margin-top: 15px;">Record updated in flagging system.</p>${badge}`;
+        modalMessage.innerHTML = `<div style="text-align: left; background: #fdf2f2; padding: 15px; border-radius: 8px; border-left: 5px solid #e74c3c;"><p><strong>NAME:</strong> ${esc(info.name)}</p><p><strong>REASON:</strong> <span style="color: #c0392b;">${esc(info.reason)}</span></p><p style="font-size: 0.85rem; color: #7f8c8d;"><strong>TIME:</strong> ${esc(info.time)}</p></div><p style="margin-top: 15px;">Record updated in flagging system.</p>${badge}`;
         modalFooter.innerHTML = `<button class="btn-modal btn-yes" style="width: 100%; background-color: #e74c3c;" onclick="acknowledgeFlag()">ACKNOWLEDGE</button>`;
         modal.style.display = 'flex';
     }

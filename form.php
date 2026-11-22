@@ -1,54 +1,54 @@
 <?php
-/** --- 1. SESSION & TIMEZONE --- **/
-session_start();
-date_default_timezone_set('Asia/Manila');
+/**
+ * FILE: form.php
+ * PURPOSE: Visitor "time-in" form for logged-in users.
+ */
+require_once 'auth.php';
 
-/** --- 2. ACCESS CONTROL --- **/
+/** --- 1. ACCESS CONTROL --- **/
 if (!isset($_SESSION['user_id'])) {
-    header("Location: INDEX.PHP");
+    header("Location: index.php");
+    exit();
+}
+if ($_SESSION['user_id'] === 'ADMIN_01') { // master admin has no visitor form
+    header("Location: admin.php");
     exit();
 }
 
-/** --- 3. DATABASE CONNECTION --- **/
-$servername = "sql305.infinityfree.com";
-$username = "if0_41450029";
-$password = "AbpaBt2909sgmC";
-$dbname = "if0_41450029_nath"; 
-$conn = new mysqli($servername, $username, $password, $dbname);
-mysqli_set_charset($conn, "utf8mb4");
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-/** --- 4. SECURITY & ROLE CHECK --- **/
+/** --- 2. SECURITY & ROLE CHECK --- **/
 $current_uid = $_SESSION['user_id'];
 $security_check = $conn->prepare("SELECT is_blocked, role FROM users WHERE id = ? LIMIT 1");
 $security_check->bind_param("i", $current_uid);
 $security_check->execute();
-$security_result = $security_check->get_result();
+$user_status = $security_check->get_result()->fetch_assoc();
+$security_check->close();
 
-if ($user_status = $security_result->fetch_assoc()) {
-    // Blocked check
-    if ((int)$user_status['is_blocked'] === 1) {
-        session_unset();
-        session_destroy();
-        header("Location: INDEX.PHP?status=blocked");
-        exit();
-    }
-
-    // Role redirection
-    $current_role = strtoupper(trim($user_status['role']));
-    if ($current_role === 'ADMIN') {
-        header("Location: admin.php");
-        exit();
-    }
-} else {
-    session_destroy();
-    header("Location: INDEX.PHP");
+if (!$user_status) {
+    session_unset(); session_destroy();
+    header("Location: index.php");
     exit();
 }
-$security_check->close();
+if ((int) $user_status['is_blocked'] === 1) {
+    session_unset(); session_destroy();
+    header("Location: login.php?status=blocked");
+    exit();
+}
+if (strtoupper(trim($user_status['role'] ?? '')) === 'ADMIN') {
+    $_SESSION['role'] = 'ADMIN'; // keep session in sync, avoids a redirect loop
+    header("Location: admin.php");
+    exit();
+}
+
+/** --- 3. ALREADY INSIDE? GO STRAIGHT TO THE "OUT" SCREEN --- **/
+$inside = $conn->prepare("SELECT id FROM active_sessions WHERE email = ? ORDER BY id DESC LIMIT 1");
+$inside->bind_param("s", $_SESSION['email']);
+$inside->execute();
+if ($open = $inside->get_result()->fetch_assoc()) {
+    $_SESSION['active_id'] = $open['id'];
+    header("Location: out.php");
+    exit();
+}
+$inside->close();
 
 /** --- 5. DATA PREPARATION --- **/
 $email = $_SESSION['email'] ?? ''; 
@@ -150,11 +150,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['submit_log'])) {
                 // IMPORTANT: Sync session active_id for out.php
                 $_SESSION['active_id'] = $conn->insert_id;
                 
-                // USE JAVASCRIPT REDIRECT TO BYPASS HEADER ISSUES
-                echo "<script>window.location.href='out.php';</script>";
+                header("Location: out.php");
                 exit();
             } else {
-                $error_msg = "Database Error: " . $conn->error;
+                $error_msg = "Could not save your log. Please try again.";
             }
         }
     }
@@ -273,7 +272,7 @@ body::after {
     background-color: white; 
     border-radius: 50%;
     border: 6px solid #fff;
-    background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LOGO.jpg?raw=true');
+    background-image: url('neu-logo.jpg');
     background-size: cover;
     background-position: center;
     box-shadow: 0 10px 30px rgba(0,0,0,0.4);
@@ -494,8 +493,11 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
 }
 
 </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
-<body>
+<body class="form-page">
     <div class="main-wrapper">
         <div class="logo"></div>
 
@@ -524,7 +526,7 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
 
                             <?php if (!empty($error_msg)): ?>
                                 <div id="error-display" style="color: #dc3545; font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; text-transform: uppercase;">
-                                    ⚠️ <?php echo $error_msg; ?>
+                                    ⚠️ <?php echo e($error_msg); ?>
                                 </div>
                             <?php endif; ?>
                             
@@ -742,7 +744,7 @@ label { color: white; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px; 
     </div>
 
     <div class="logout-wrapper">
-        <a href="INDEX.php" class="btn-logout">LOGOUT</a>
+        <a href="logout.php" class="btn-logout">LOGOUT</a>
     </div>
 
 <script>

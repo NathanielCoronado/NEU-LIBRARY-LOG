@@ -1,6 +1,7 @@
 <?php
 /* --- 1. CONFIGURATION & DATABASE CONNECTION --- */
-include 'db_conn.php';
+require_once 'auth.php';
+require_admin_api();
 
 /* --- 2. INPUT INITIALIZATION --- */
 $id_number = $_GET['id_number'] ?? '';

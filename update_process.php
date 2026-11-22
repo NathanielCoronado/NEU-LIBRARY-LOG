@@ -1,12 +1,9 @@
 <?php
 /** --- 1. CONFIGURATION & HEADERS --- **/
 header('Content-Type: application/json');
-include 'db_conn.php'; 
+require_once 'auth.php';
+require_admin_api();
 
-if ($conn->connect_error) {
-    echo json_encode(['success' => false, 'message' => 'DB Connection Failed']);
-    exit;
-}
 
 /** --- 2. INPUT HANDLING & VALIDATION --- **/
 $session_id    = $_POST['session_id'] ?? '';
@@ -31,41 +28,46 @@ if (empty($session_id) || empty($new_id) || empty($old_id)) {
 $conn->begin_transaction();
 
 try {
-    /** --- 3.1 PHASE 1: GLOBAL PROFILE UPDATE --- **/
-    $tables = ['active_sessions', 'library_logs', 'visitor_masterlist'];
-    
-    foreach ($tables as $table) {
-        $sql = "UPDATE $table SET 
-                id_number = ?, first_name = ?, middle_name = ?, last_name = ?, suffix = ?, 
-                user_type = ?, course = ?, contact = ? 
-                WHERE id_number = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("sssssssss", $new_id, $first_name, $middle_name, $last_name, $suffix, $u_type, $course, $contact, $old_id);
-        $stmt->execute();
-        $stmt->close();
+    $source = $_POST['source'] ?? '';
+    $visitTables = $source === 'active' ? ['active_sessions']
+                 : ($source === 'log'   ? ['library_logs'] : ['active_sessions', 'library_logs']);
+
+    /** --- 3.1 PHASE 1: PROFILE UPDATE --- **/
+    $profileSet = "id_number = ?, first_name = ?, middle_name = ?, last_name = ?, suffix = ?, user_type = ?, course = ?, contact = ?";
+
+    if (strtoupper($old_id) === 'N/A') {
+        // Walk-in without an ID: only edit THIS row, otherwise every "N/A" visitor would be renamed
+        foreach ($visitTables as $table) {
+            $stmt = $conn->prepare("UPDATE $table SET $profileSet WHERE id = ? AND id_number = ?");
+            $stmt->bind_param("ssssssssis", $new_id, $first_name, $middle_name, $last_name, $suffix, $u_type, $course, $contact, $session_id, $old_id);
+            $stmt->execute();
+            $stmt->close();
+        }
+    } else {
+        // Real ID number: keep the person's profile in sync across every record
+        foreach (['active_sessions', 'library_logs', 'visitor_masterlist'] as $table) {
+            $stmt = $conn->prepare("UPDATE $table SET $profileSet WHERE id_number = ?");
+            $stmt->bind_param("sssssssss", $new_id, $first_name, $middle_name, $last_name, $suffix, $u_type, $course, $contact, $old_id);
+            $stmt->execute();
+            $stmt->close();
+        }
     }
 
     /** --- 3.2 PHASE 2: ROW-SPECIFIC VISIT UPDATE --- **/
-    // Update active_sessions
-    $sql_act = "UPDATE active_sessions SET reason = ?, others_detail = ? WHERE id = ? AND id_number = ?";
-    $stmt1 = $conn->prepare($sql_act);
-    $stmt1->bind_param("ssis", $reason, $others_detail, $session_id, $new_id);
-    $stmt1->execute();
-    $stmt1->close();
-
-    // Update library_logs
-    $sql_lib = "UPDATE library_logs SET reason = ?, others_detail = ? WHERE id = ? AND id_number = ?";
-    $stmt2 = $conn->prepare($sql_lib);
-    $stmt2->bind_param("ssis", $reason, $others_detail, $session_id, $new_id);
-    $stmt2->execute();
-    $stmt2->close();
+    // Only touch the table the row came from (IDs are not shared between the two tables)
+    foreach ($visitTables as $table) {
+        $stmtV = $conn->prepare("UPDATE $table SET reason = ?, others_detail = ? WHERE id = ? AND id_number = ?");
+        $stmtV->bind_param("ssis", $reason, $others_detail, $session_id, $new_id);
+        $stmtV->execute();
+        $stmtV->close();
+    }
 
     /** --- 4. EXECUTION & RESPONSE --- **/
     $conn->commit();
     echo json_encode(['success' => true, 'message' => 'Profile and ID updated across all records.']);
 
 } catch (Exception $e) {
-    if ($conn->in_transaction) { $conn->rollback(); }
+    $conn->rollback();
     echo json_encode(['success' => false, 'message' => 'Update failed: ' . $e->getMessage()]);
 }
 

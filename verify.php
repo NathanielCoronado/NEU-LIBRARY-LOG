@@ -1,47 +1,54 @@
 <?php
-/** --- 1. INITIALIZATION & DATA DECODING --- **/
+/**
+ * FILE: verify.php
+ * PURPOSE: Activates an account from the signed link e-mailed by signup.php.
+ */
 session_start();
-include 'db_conn.php';
+require_once 'mailer.php';
 
-if (isset($_GET['token'])) {
-    $decoded_data = base64_decode($_GET['token']);
-    $token_data = json_decode($decoded_data, true);
+$token_data = isset($_GET['token']) ? read_signed_token($_GET['token']) : null;
 
-    if (!$token_data) {
-        header("Location: LOGIN.PHP?error=invalid_token");
-        exit();
-    }
+if (!isset($_GET['token'])) {
+    header("Location: login.php");
+    exit();
+}
+if (!$token_data || empty($token_data['em'])) {
+    header("Location: login.php?status=invalid_token");
+    exit();
+}
+if (time() - (int) ($token_data['time'] ?? 0) > 86400) { // 24 hours
+    header("Location: login.php?status=link_expired");
+    exit();
+}
 
-    $email      = mysqli_real_escape_string($conn, $token_data['em']);
-    $first_name = mysqli_real_escape_string($conn, $token_data['fn']);
-    $last_name  = mysqli_real_escape_string($conn, $token_data['ln']);
-    $password   = $token_data['pw'] ?? '';
+$email      = $token_data['em'];
+$first_name = $token_data['fn'] ?? '';
+$last_name  = $token_data['ln'] ?? '';
+$password   = $token_data['pw'] ?? '';
+$photo      = $token_data['pic'] ?? ("https://www.gravatar.com/avatar/" . md5(strtolower($email)) . "?s=500&d=identicon");
 
-    /** --- 2. VERIFICATION STATUS CHECK --- **/
-    $stmt = $conn->prepare("SELECT is_verified FROM users WHERE email = ? LIMIT 1");
-    $stmt->bind_param("s", $email);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $user = $result->fetch_assoc();
+/* --- VERIFICATION STATUS CHECK --- */
+$stmt = $conn->prepare("SELECT is_verified FROM users WHERE email = ? LIMIT 1");
+$stmt->bind_param("s", $email);
+$stmt->execute();
+$user = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
-    if ($user && $user['is_verified'] == 1) {
-        header("Location: LOGIN.PHP?status=link_expired");
-        exit();
-    }
+if ($user && (int) $user['is_verified'] === 1) {
+    header("Location: login.php?status=link_expired");
+    exit();
+}
 
-    /** --- 3. USER RECORD SYNCHRONIZATION --- **/
-    $email_hash = md5(strtolower(trim($email)));
-    $smart_photo = "https://www.gravatar.com/avatar/" . $email_hash . "?s=500&d=identicon";
-
-    if ($user) {
-        $update_stmt = $conn->prepare("UPDATE users SET first_name = ?, last_name = ?, profile_pic = ? WHERE email = ?");
-        $update_stmt->bind_param("ssss", $first_name, $last_name, $smart_photo, $email);
-        $update_stmt->execute();
-    } else {
-        $insert_stmt = $conn->prepare("INSERT INTO users (first_name, last_name, email, password, profile_pic, is_verified) VALUES (?, ?, ?, ?, ?, 0)");
-        $insert_stmt->bind_param("sssss", $first_name, $last_name, $email, $password, $smart_photo);
-        $insert_stmt->execute();
-    }
+/* --- CREATE / ACTIVATE ACCOUNT --- */
+if ($user) {
+    $up = $conn->prepare("UPDATE users SET first_name = ?, last_name = ?, password = ?, profile_pic = ?, is_verified = 1 WHERE email = ?");
+    $up->bind_param("sssss", $first_name, $last_name, $password, $photo, $email);
+    $up->execute();
+} else {
+    $ins = $conn->prepare("INSERT INTO users (first_name, last_name, email, password, profile_pic, is_verified) VALUES (?, ?, ?, ?, ?, 1)");
+    $ins->bind_param("sssss", $first_name, $last_name, $email, $password, $photo);
+    $ins->execute();
+}
 ?>
 
 <!DOCTYPE html>
@@ -91,7 +98,7 @@ if (isset($_GET['token'])) {
         }
         .background-image {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
-            background-image: url('https://github.com/NathanielCoronado/NEU-LIBRARY-LOG/blob/main/NEU%20LIBRARY.jpg?raw=true');
+            background-image: url('neu-library.jpg');
             background-size: cover; background-position: center;
             filter: blur(8px) brightness(1.1);
             transform: scale(1.1);
@@ -146,6 +153,9 @@ if (isset($_GET['token'])) {
             .background-image { filter: blur(6px) brightness(1.1); }
         }
     </style>
+    <link rel="icon" href="favicon.ico">
+    <meta name="theme-color" content="#004aad">
+    <link rel="stylesheet" href="responsive.css">
 </head>
 <body>
 
@@ -162,8 +172,8 @@ if (isset($_GET['token'])) {
             title: 'Email Confirmed!',
             html: `
                 <div style="font-family: 'Inter', sans-serif; font-size: 15px; color: #4a5568; line-height: 1.6; margin-top: 10px;">
-                    Greetings, <strong style="color: #00796b;"><?php echo htmlspecialchars($first_name); ?></strong>!<br><br>
-                    Verification complete. You may now synchronize your profile via Google to access the library system.
+                    Greetings, <strong style="color: #00796b;"><?php echo e($first_name); ?></strong>!<br><br>
+                    Verification complete. You can now log in with your email and password, or with Google.
                 </div>
             `,
             icon: 'success',
@@ -177,18 +187,9 @@ if (isset($_GET['token'])) {
             }
         }).then((result) => {
             if (result.isConfirmed) {
-                window.location.href = 'LOGIN.PHP?verify_success=true&email=<?php echo urlencode($email); ?>';
+                window.location.href = 'login.php?verify_success=true&email=<?php echo urlencode($email); ?>';
             }
         });
     </script>
 </body>
 </html>
-
-<?php 
-    exit(); 
-} else {
-    /** --- 4. FALLBACK REDIRECTION --- **/
-    header("Location: LOGIN.PHP");
-    exit();
-}
-?>
